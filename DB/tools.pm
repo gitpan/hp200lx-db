@@ -2,7 +2,7 @@
 # FILE .../CPAN/hp200lx-db/DB/tools.pm
 #
 # written:       1999-02-21
-# latest update: 1999-02-22 20:47:40
+# latest update: 1999-05-23 20:38:56
 #
 
 package HP200LX::DB::tools;
@@ -11,7 +11,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA= qw(Exporter);
 @EXPORT= qw(
   print_list
@@ -19,7 +19,7 @@ $VERSION = '0.06';
 );
 
 # ----------------------------------------------------------------------------
-# vermutlich nur fuer ADB files!
+# possibly only for ADB files!
 sub print_list
 {
   local *FO= shift;
@@ -32,6 +32,7 @@ sub print_list
   foreach $field (@_)
   {
     $val= $lang->{$field};
+    # print "field='$field' val='$val'\n";
     next unless (exists ($rec->{$val}) && ($val= $rec->{$val}) ne '');
     next if ($supress_null && $val == 0);
 

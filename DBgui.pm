@@ -200,24 +200,24 @@ sub create_record_bar
 {
   my ($top, $DBgui, $DBparent)= @_;
 
-  my $key_pad= $top->Frame (relief => 'grove');
-  $key_pad->pack (side => 'bottom', fill => 'x');
+  my $key_pad= $top->Frame (-relief => 'groove');
+  $key_pad->pack (-side => 'bottom', -fill => 'x');
 
-  $key_pad->Label (text => 'Record')->pack (side => 'left');
-  $key_pad->Button (text => '<<', command => sub { $DBgui->show_record (-1, 1); } )->pack (side => 'left');
-  my $ed= $key_pad->Entry (textvariable => \$DBgui->{disp}, width => 4)->pack (side => 'left');
+  $key_pad->Label (-text => 'Record')->pack (-side => 'left');
+  $key_pad->Button (-text => '<<', -command => sub { $DBgui->show_record (-1, 1); } )->pack (-side => 'left');
+  my $ed= $key_pad->Entry (-textvariable => \$DBgui->{disp}, -width => 4)->pack (-side => 'left');
   $ed->bind ('<Return>', sub { $DBgui->show_record (0, 1); });
-  $key_pad->Button (text => '>>', command => sub { $DBgui->show_record (1, 1); } )->pack (side => 'left');
-  $key_pad->Label (text => 'of')->pack (side => 'left');
-  $key_pad->Entry (textvariable => \$DBgui->{num}, width => 4, relief => 'flat')->pack (side => 'left');
-  $key_pad->Button (text => 'ADD', command => sub { $DBgui->add_record (); } )->pack (side => 'left');
+  $key_pad->Button (-text => '>>', -command => sub { $DBgui->show_record (1, 1); } )->pack (-side => 'left');
+  $key_pad->Label (-text => 'of')->pack (-side => 'left');
+  $key_pad->Entry (-textvariable => \$DBgui->{num}, -width => 4, -relief => 'flat')->pack (-side => 'left');
+  $key_pad->Button (-text => 'ADD', -command => sub { $DBgui->add_record (); } )->pack (-side => 'left');
 
   if ($DBparent)
   {
-    $key_pad->Button (text => 'Views', command => sub { $DBparent->open_vpt_list (); } )->pack (side => 'left');
+    $key_pad->Button (-text => 'Views', -command => sub { $DBparent->open_vpt_list (); } )->pack (-side => 'left');
   }
 
-  $key_pad->Button (text => 'Done', command => sub { $DBgui->hide (); } )->pack (side => 'left');
+  $key_pad->Button (-text => 'Done', -command => sub { $DBgui->hide (); } )->pack (-side => 'left');
 
   $key_pad;
 }
@@ -240,13 +240,13 @@ former top level window containing just a floating menu bar...
   my $top= MainWindow->new ();
   $top->title ($title);
 
-  my $mb= $top->Frame (relief => 'raised', width => 40);
-  $mb->pack (side => 'top', fill => 'x');
+  my $mb= $top->Frame (-relief => 'raised', -width => 40);
+  $mb->pack (-side => 'top', -fill => 'x');
 
-  my $mb_f= $mb->Menubutton (text => 'File', relief => 'raised')
-               ->pack (side => 'left', padx => 2, fill => 'x');
-  $mb_f->command (label => 'Save', command => sub {$db->saveDB ('test.out');});
-  $mb_f->command (label => 'Exit', command => sub {exit});
+  my $mb_f= $mb->Menubutton (-text => 'File', -relief => 'raised')
+               ->pack (-side => 'left', -padx => 2, -fill => 'x');
+  $mb_f->command (-label => 'Save', -command => sub {$db->saveDB ('test.out');});
+  $mb_f->command (-label => 'Exit', -command => sub {exit});
 
-  my $mb_v= $mb->Menubutton (text => 'Views', relief => 'raised')
-               ->pack (side => 'left', padx => 2, fill => 'x');
+  my $mb_v= $mb->Menubutton (-text => 'Views', -relief => 'raised')
+               ->pack (-side => 'left', -padx => 2, -fill => 'x');

@@ -9,7 +9,7 @@
 # + mapping vCalendar recurrence format
 #
 # written:       1998-09-20
-# latest update: 1999-02-22 20:47:26
+# latest update: 1999-05-23 20:27:29
 #
 
 package HP200LX::DB::recurrence;
@@ -18,7 +18,9 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT_OK);
 use Exporter;
 
-$VERSION = '0.06';
+use HP200LX::DB qw(fmt_date fmt_time pack_date hex_dump);
+
+$VERSION = '0.07';
 @ISA= qw(Exporter);
 @EXPORT_OK= qw(:all
                new
@@ -26,6 +28,7 @@ $VERSION = '0.06';
               );
 
 # ----------------------------------------------------------------------------
+my $no_val=  65535;             # NIL, empty list, -1 etc.
 my @BITS=
 (
     1,    2,    4,    8,    16,    32,    64,   128,
@@ -72,9 +75,29 @@ my %RECURRENCE_XAPIA=
 my @RECURRENCE_EXCEPTION= ( 'deleted', 'checked-off' );
 
 # ----------------------------------------------------------------------------
+sub new
+{
+  my $class= shift;
+  my $factor= shift;
+
+  my $obj=
+  {
+    'recurrence'        => $factor,
+    'recurrence_text'   => &get_bit_text ($factor, \@RECURRENCE_TEXT),
+    'cycle'             => shift,
+    'rec_days'          => shift,
+    'rec_months'        => shift,
+    'duration_begin'    => shift,
+    'duration_end'      => shift,
+  };
+
+  bless $obj;
+}
+
+# ----------------------------------------------------------------------------
 # decode the recurrence status of an ADB record
 # for details about the data structure, see adb-format.html
-sub new
+sub decode
 {
   my $class= shift;
   my $factor= shift;
@@ -99,7 +122,7 @@ sub new
     'duration_end'      => $rep_end,
   };
 
-  my ($off, $d, $c, $cnt);
+  my ($off, $cnt);
   if ($lng == 18)
   { # NOTE: there does not seem to be any other indication of the
     #       data type here except the total length
@@ -129,8 +152,8 @@ sub new
         last;
       }
 
-      $d= &HP200LX::DB::fmt_date (substr ($b, $off, 3));
-      $c= unpack ('C', substr ($b, $off+3, 1));
+      my $d= &fmt_date (substr ($b, $off, 3));
+      my $c= unpack ('C', substr ($b, $off+3, 1));
       push (@{$obj->{exceptions}}, { 'date' => $d, 'status' => $c });
 
       $off += 4;
@@ -143,11 +166,102 @@ sub new
   {
     print "\n", '-'x72, "\nerror processing recurrence record!\n";
     print "lng=$lng cnt=$cnt off=$off\n";
-    &HP200LX::DB::hex_dump ($b, *STDOUT);
+    &hex_dump ($b, *STDOUT);
     &print_recurrence_status ($obj, *STDOUT);
   }
 
   bless $obj;
+}
+
+# ----------------------------------------------------------------------------
+# pack the recurrence status of an ADB record
+sub pack
+{
+  my $rec= shift;
+  my $b;
+
+  $b= pack ('Cvv', $rec->{cycle}, $rec->{rec_days}, $rec->{rec_months});
+  $b .= &pack_date ($rec->{duration_begin});
+  $b .= &pack_date ($rec->{duration_end});
+
+  if ($rec->{type} eq 'checked-off')
+  {
+    my ($idx, $prev, $next, $main)=
+    my $op= $rec->{check_off_pointer};
+    $b .= pack ('Cvvv',
+                $op->{'idx'}, $op->{'prev'}, $op->{'next'}, $op->{'main'});
+  }
+  else
+  {
+    my $oe= $rec->{exceptions};
+    my $cnt= $#$oe;
+    if ($cnt > 254)
+    {
+      print "warning: can't pack $cnt exceptions, truncating to 254!\n";
+      $cnt= 254;
+    }
+
+    $b .= pack ('C', $cnt+1);
+
+    my ($ox);
+    foreach $ox (@$oe)
+    {
+      $b .= &pack_date ($ox->{'date'});
+      $b .= pack ('C', $ox->{'status'});
+    } 
+  }
+
+  $b;
+}
+
+# ----------------------------------------------------------------------------
+# check-off a recurrence entry
+sub check_off
+{
+  my $obj= shift;
+
+  if ($obj->{type} eq 'exceptions')
+  {
+    print "warning: overwriting recurrence exceptions!\n";
+  }
+
+  $obj->{type}= 'checked-off';
+  my ($idx, $prev, $next, $main)= unpack ('Cvvv', substr ($b, 0x0B));
+
+  $obj->{check_off_pointer}=
+  {
+    'idx'  => shift,            # index within main entry
+    'prev' => shift || $no_val,
+    'next' => shift || $no_val,
+    'main' => shift || $no_val,
+  };
+}
+
+# ----------------------------------------------------------------------------
+# set recurrence exception
+# $recurrence->exception (date => status, ...);
+sub exception
+{
+  my $obj= shift;
+  my %dates= @_;
+
+  if ($obj->{type} eq 'checked-off')
+  {
+    print "warning: overwriting recurrence check-off marker!\n";
+  }
+
+  unless ($obj->{type} eq 'exceptions')
+  {
+    $obj->{type}= 'exceptions';
+    $obj->{exceptions}= [];
+  }
+  my $ex= $obj->{exceptions};
+
+  my ($d);
+  foreach $d (sort keys %dates)
+  {
+    push (@$ex, { 'date' => $d, 'status' => $dates{$d}});
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -282,4 +396,3 @@ sub export_to_vCalendar
 
 # ----------------------------------------------------------------------------
 1;
-

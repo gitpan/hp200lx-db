@@ -1,8 +1,8 @@
-<!-- FILE %usr/unixonly/CPAN/hp200lx-db-0.04/docs/adb-differences.html 1998-09-19 20:26:05 +gg -->
+<!-- FILE .../CPAN/hp200lx-db/docs/adb-differences.html 1998-09-19 20:26:05 +gg -->
 <title>ADB: appointment book database format</title>
 <h1>ADB: appointment book database format</h1>
 
-latest update: 1998-12-05 21:33:35 CET<br>
+latest update: 1999-05-24  9:31:22 CET<br>
 compiled by: <a href="mailto:g.gonter@ieee.org">g.gonter@ieee.org</a>
 
 <h3>Foreword</h3>
@@ -221,9 +221,9 @@ on the entry type:
 <tr><td>0x07</tr>
 <tr><td>0x08<td rowspan=2>Note<td rowspan=2 colspan=2>Number of note</tr>
 <tr><td>0x09</tr>
-<tr><td>0x0A<td rowspan=2>INT?<td rowspan=2 colspan=2>F-0x0A?, undef. (INT?)</tr>
+<tr><td>0x0A<td rowspan=2>INT<td rowspan=2 colspan=2>previous record on same day</tr>
 <tr><td>0x0B</tr>
-<tr><td>0x0C<td rowspan=2>INT?<td rowspan=2 colspan=2>F-0x0C?, undef. (INT?)</tr>
+<tr><td>0x0C<td rowspan=2>INT<td rowspan=2 colspan=2>next record on same day</tr>
 <tr><td>0x0D</tr>
 <tr><td>0x0E<td>BYTEBOOL<td colspan=2><a name="#entry_type">Entry Type and Flags</a></tr>
 <tr><td>0x0F<td rowspan=3>Date<td rowspan=3 colspan=2>Begin Date (U19)</tr>
@@ -243,8 +243,18 @@ on the entry type:
 <tr><td>0x1A<td>U18
             <td colspan=2><a href="#recurrence_class">recurrence type
             (RADIO_BUTTON *and* U18)</tr>
-<tr><td>0x1B<td>String/mod.<td colspan=2>Description</tr>
+<tr><td>0x1B<td rowspan=2>String/mod.<td colspan=2 rowspan=2>Description</tr>
+<tr><td>...</tr>
+<tr><td>var<td rowspan=2>String<td colspan=2 rowspan=2>Category</tr>
+<tr><td>...</tr>
+<tr><td>var<td rowspan=2>String<td colspan=2 rowspan=2>Location</tr>
+<tr><td>...</tr>
+<tr><td>var<td rowspan=2>Binary<td colspan=2 rowspan=2>Recurrence data</tr>
+<tr><td>...</tr>
 </table>
+
+Notes: The category field is not used anywhere!
+
 
 <h3><a name="entry_type">Entry Type and Flags</h3>
 The type of an ADB entry can be determined by examining the upper
@@ -314,8 +324,8 @@ in the <tt>HP200LX::DB</tt> Perl module.
 <tr><td align=right>11<td align=middle>X<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>4<td align=right>0x00<td>'Carry Forward'<td>'&Uuml;bertrag'</tr>
 <tr><td align=right>12<td align=middle>X<td align=middle>X<td align=right>10<td>NOTE<td align=right>2<td align=right>0<td align=right>0x08<td align=right>0<td align=right>0x00<td>'Note'<td>'Notiz'</tr>
 <tr><td align=right>13<td align=middle>X<td align=middle>X<td align=right>18<td>U18<td align=right>1<td align=right>0<td align=right>0x1A<td align=right>0<td align=right>0x00<td>'Repeat Status: '<td>'Wiederholung: '</tr>
-<tr><td align=right>14<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>4<td align=right>0x00<td>'Shows in Week View'<td>'Zeigt Wochenplan'</tr>
-<tr><td align=right>15<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>2<td align=right>0x00<td>'Shows in Month View'<td>'Zeigt Monatsplan'</tr>
+<tr><td align=right>14<td align=middle>&nbsp;<td align=middle>X<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>4<td align=right>0x00<td>'Shows in Week View'<td>'Zeigt Wochenplan'</tr>
+<tr><td align=right>15<td align=middle>&nbsp;<td align=middle>X<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>2<td align=right>0x00<td>'Shows in Month View'<td>'Zeigt Monatsplan'</tr>
 <tr><td align=right>16<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>6<td>CATEGORY<td align=right>2<td align=right>0<td align=right>0x02<td align=right>0<td align=right>0x20<td>'Category'<td>'Kategorie'</tr>
 <tr><td align=right>17<td align=middle>mod.<td align=middle>mod.<td align=right>9<td>RADIO_BUTTON<td align=right>1<td align=right>0<td align=right>0x1A<td align=right>0<td align=right>0x00<td>'None   '<td>'Keine  '</tr>
 <tr><td align=right>18<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>9<td>RADIO_BUTTON<td align=right>1<td align=right>0<td align=right>0x1A<td align=right>1<td align=right>0x00<td>'Daily  '<td>'T&auml;glich'</tr>
@@ -327,6 +337,18 @@ in the <tt>HP200LX::DB</tt> Perl module.
 <tr><td align=right>24<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>128<td align=right>0x00<td>'Appointment'<td>'Termin'</tr>
 <tr><td align=right>25<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>16<td align=right>0x00<td>'ToDo'<td>'Vorhaben'</tr>
 <tr><td align=right>26<td align=middle>&nbsp;<td align=middle>&nbsp;<td align=right>0<td>BYTEBOOL<td align=right>1<td align=right>0<td align=right>0x0E<td align=right>2<td align=right>0x00<td>'Completed ToDo'<td>'Erledigtes Vorhaben'</tr>
+</table>
+Note: Category is not used anywhere!
+
+<hr>
+<h2><a name="undef">undefined fields</h2>
+These fields are not described by field definition records.
+<table border=1>
+<tr><th>To-Do<th>Events<th>TType<th>Size<th>Off<th>Description</tr>
+<tr><td>X<td>X<td>INT<td>2<td>0x00<td>record length</tr>
+<tr><td>X<td>X<td>INT<td>4<td>0x06<td>recurrence data pointer</tr>
+<tr><td>X<td>X<td>INT<td>2<td>0x0A<td>previous record on same day</tr>
+<tr><td>X<td>X<td>INT<td>2<td>0x0C<td>next record on same day</tr>
 </table>
 
 <hr>
@@ -344,11 +366,11 @@ used in the vCalendar as closely as possibly.</p>
     (english "<a href="#recurrence_class">Repeat Status</a>",
     german "<a href="#recurrence)class">Wiederholung</a>")
 <dt>Recurrence Rule (vCalendar)<dd>
-    describes patterns of recuring events
+    describes patterns of recurring events
 <dt>Recurrence Status (vCalendar)<dd>
-    describes instances of recuring events, e.g. their completion
+    describes instances of recurring events, e.g. their completion
 <dt>Recurrence Exception Rule (vCalendar)<dd>
-    describes patterns of <em>exceptions</em> to recuring events
+    describes patterns of <em>exceptions</em> to recurring events
 <dt>Recurrence Exception (vCalendar)<dd>
     singular exceptions
 </dl>
@@ -415,15 +437,15 @@ Notes:
 <p>
 
 <h4>monthly recurrence</h4>
-Entries recuring every month allow specification of <tt>cycle</tt>
+Entries recurring every month allow specification of <tt>cycle</tt>
 and a <tt>days</tt> indicator.
 
 <h4>yearly recurrence</h4>
-Entries recuring every year allow specification of <tt>cycle</tt>,
+Entries recurring every year allow specification of <tt>cycle</tt>,
 a <tt>days</tt> indicator, and a <tt>month</tt> idicator.
 
 <h4>recurrence day indicator</h4>
-The recurence day indicator is encoded in a 16 bit integer.
+The recurrence day indicator is encoded in a 16 bit integer.
 If bit 7 is not set, bits 0..6 represent the day number, otherwise
 the integer represents a bit field:
 <table border=1>
@@ -444,10 +466,14 @@ the integer represents a bit field:
 </table>
 </p>
 Note: Apparently, the bit for the week day is not set unless
-the recurrence is defined as "special".
+the recurrence is defined as "special".<br>
+Examples:
+<dl>
+<dt>0x1084<dd>last Wed in month
+</dl>
 
 <h4>recurrence month indicator</h4>
-The recurence month indicator is encoded in a 16 bit integer bit field.
+The recurrence month indicator is encoded in a 16 bit integer bit field.
 Bit 0 represents January, bit 12 represents december.
 
 <h4>Recurrence Exception List</h4>
@@ -478,7 +504,12 @@ their recurrence status extension block is described below.
 Checked-off items have a fixed size data block containing pointers
 to the main entry and other checked-off items.  The recurrence exception
 index is the number of the exception description in the main entry's
-recurrence exception list.
+recurrence exception list.<p>
+
+This is used to indicate that the entry at the given date
+was checked off at that day.  This is not used at the main
+entry of a recurring entry.
+<p>
 <table border=1>
 <tr><th>Offset<th>Type<th>Description
 <tr><td>0x0B<td>INT<td>recurrence exception index in the main entry
@@ -500,7 +531,7 @@ recurrence exception list.
 <dt>adbio.c<dd> C sources used for dumping and loading ADB files, found on S.U.P.E.R.
 <dt>vCalendar<dd> vCalendar - The Electronic Calendaring and Scheduling
                   Exchange Format - Version 1.0
-<dt>RFC 2425<dd> A MIME Content-Type for Directory Information
-<dt>RFC 2426<dd> vCard MIME Directory Profile
+<dt>RFC 2445<dd> Internet Calendaring and Scheduling Core Object Specification
+                 (iCalendar)
 </dl>
 

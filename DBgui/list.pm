@@ -4,7 +4,7 @@
 # list view component of the HP-200LX/DB GUI
 #
 # written:       1998-03-08
-# latest update: 1999-02-22 20:48:04
+# latest update: 1999-05-24 12:52:48
 #
 
 package HP200LX::DBgui::list;
@@ -13,7 +13,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;
@@ -53,20 +53,20 @@ sub new
     $top->title ("$title [$vpt_name]");
 
     # menu bar
-    my $mb= $top->Frame (relief => 'raised', width => 40);
+    my $mb= $top->Frame (-relief => 'raised', -width => 40);
 
     # menu item "view"
-    $mb->pack (side => 'top', fill => 'x');
-    my $mb_f= $mb->Menubutton (text => 'File', relief => 'raised')
-                 ->pack (side => 'left', padx => 2, fill => 'x');
-    $mb_f->command (label => 'Hide', command => sub {$top->withdraw ();});
-    $mb_f->command (label => 'Exit', command => sub {exit});
+    $mb->pack (-side => 'top', -fill => 'x');
+    my $mb_f= $mb->Menubutton (-text => 'File', -relief => 'raised')
+                 ->pack (-side => 'left', -padx => 2, -fill => 'x');
+    $mb_f->command (-label => 'Hide', -command => sub {$top->withdraw ();});
+    $mb_f->command (-label => 'Exit', -command => sub {exit});
 
-    $mb_v= $mb->Menubutton (text => 'View', relief => 'raised')
-               ->pack (side => 'left', padx => 2, fill => 'x');
-    $mb_v->command (label => 'select view', command => sub {$DBgui->open_vpt_list});
-    $mb_v->command (label => 'dump def',
-      command => sub {&HP200LX::DB::vpt::show_viewptdef ($vptd, *STDOUT);});
+    $mb_v= $mb->Menubutton (-text => 'View', -relief => 'raised')
+               ->pack (-side => 'left', -padx => 2, -fill => 'x');
+    $mb_v->command (-label => 'select view', -command => sub {$DBgui->open_vpt_list});
+    $mb_v->command (-label => 'dump def',
+      -command => sub {&HP200LX::DB::vpt::show_viewptdef ($vptd, *STDOUT);});
   }
 
   my $List_View=
@@ -90,9 +90,9 @@ sub new
   &HP200LX::DBgui::create_record_bar ($top, $List_View, $DBgui);
 
   my $sbf= $top->Frame ();
-  $sbf->Label()->pack (side => 'top'); # place holder
-  my $sb= $sbf->Scrollbar (orient => 'vertical', width => 10)
-          ->pack (side => 'bottom', fill => 'y', expand => 1);
+  $sbf->Label()->pack (-side => 'top'); # place holder
+  my $sb= $sbf->Scrollbar (-orient => 'vertical', -width => 10)
+          ->pack (-side => 'bottom', -fill => 'y', -expand => 1);
   $List_View->{scroll}= $sb;
 
   # 1. produce the main widget as a horizontal composition of
@@ -108,29 +108,29 @@ sub new
     my $fe= $fd->[$num];
     $name= $fe->{name};
 
-    $vc->Label (text => $name, width => $col->{width}, relief => 'ridge')
-         ->pack (side => 'top', fill => 'x');
-    $lb= $vc->Listbox (width => $col->{width},
-                       height => $height,
-                       yscrollcommand => ['set', $sb])
-              ->pack (side => 'bottom', fill => 'both', expand => 1);
+    $vc->Label (-text => $name, -width => $col->{width}, -relief => 'ridge')
+         ->pack (-side => 'top', -fill => 'x');
+    $lb= $vc->Listbox (-width => $col->{width},
+                       -height => $height,
+                       -yscrollcommand => ['set', $sb])
+              ->pack (-side => 'bottom', -fill => 'both', -expand => 1);
 
-    $vc->pack (side => 'left', fill => 'both', expand => 1);
+    $vc->pack (-side => 'left', -fill => 'both', -expand => 1);
 
     push (@columns, $name);
     push (@lb, $lb);
   }
 
-  $sbf->pack (side => 'left', fill => 'y');
+  $sbf->pack (-side => 'left', -fill => 'y');
 
-  $sb->configure (command => ['yview', $List_View]);
+  $sb->configure (-command => ['yview', $List_View]);
   foreach $lb (@lb)
   {
     $lb->bind ('<Double-1>' => sub { $List_View->select_item ($lb); } );
   }
 
-  $mb_v->command (label => 'refresh',
-    command => sub {$List_View->show_rows (1);});
+  $mb_v->command (-label => 'refresh',
+    -command => sub {$List_View->show_rows (1);});
 
   $List_View->show_rows (0);
   $List_View;

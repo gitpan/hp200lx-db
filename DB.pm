@@ -7,18 +7,20 @@
 # work area: decode_type14
 #
 # written:       1997-12-28 (c) g.gonter@ieee.org
-# latest update: 1999-02-22 20:46:39
+# latest update: 1999-05-23 15:33:41
 #
 
 package HP200LX::DB;
 
 use strict;
-use vars qw($VERSION @ISA @EXPORT_OK);
+use vars qw($VERSION @ISA @EXPORT_OK @REC_TYPE);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA = qw(Exporter);
-@EXPORT_OK= qw(openDB saveDB);
+@EXPORT_OK= qw(openDB saveDB
+  fmt_date fmt_time pack_date hex_dump
+);
 
 use HP200LX::DB::vpt;     # view point management, including vpt definition
 
@@ -158,7 +160,7 @@ sub new
                                         # WDB: world time
     'APT_Data'  => {},                  # application specific extension data
 
-    'Header'    =>
+    'Header'    =>                      # see loader, save
     {
       'sig'       => "hcD\000",
       'recheader' =>
@@ -171,17 +173,21 @@ sub new
 
       'time'      =>
       {
-        'year'      => $t[5],
+        'year'      => $t[5]+1900,
         'mon'       => $t[4]+1,
-        'day'       => $t[3],
+        'day'       => $t[3]+1,
         'min'       => $t[2]*60 + $t[1],
       },
 
       # guessed data from other examples
+      'release_version' => 0x0102,
+      'file_type'       => &get_apt ($apt),
       'file_status'     => 0,
-      'file_type'       => 68,
-      'release_version' => 258,
-      'viewpt_hash'     => 34085,
+      'cur_viewpt'      => 0,
+      'num_recs'        => 0,
+      'lookup_table_offset' => 0,
+      'viewpt_hash'     => 0x8525,    # "Magic Code"
+                        #  0x8437 for US american 100LX
     },
 
     'Types' => $Types,          # DB records of each type
@@ -192,9 +198,38 @@ sub new
     'cardpagedef'       => [],  # description for the four cards
     'viewptdef'         => [],  # view point definitins; list/sort/filter
     'viewpttable'       => [],  # cached view point table
+
+    'update'            => 0,   # number of items modified
   };
 
   bless $obj;
+}
+
+# ----------------------------------------------------------------------------
+sub get_apt
+{
+  my $APT= shift || 'GDB';
+  my $code= 0x44; # generic database, GDB and PDB
+
+     if ($APT eq 'ADB') { $code= 0x32; }
+  elsif ($APT eq 'NDB') { $code= 0x4E; }
+  elsif ($APT eq 'WDB') { $code= 0x57; }
+  # else: gdb, pdb: GDB  (generic data base)
+
+  $code;
+}
+
+# ----------------------------------------------------------------------------
+sub decode_apt
+{
+  my $code= shift;
+  my $APT= 'GDB';
+
+     if ($code == 0x32) { $APT= 'ADB'; }
+  elsif ($code eq 0x4E) { $APT= 'NDB'; }
+  elsif ($code eq 0x57) { $APT= 'WDB'; }
+
+  $APT;
 }
 
 # ----------------------------------------------------------------------------
@@ -217,6 +252,8 @@ sub openDB
 {
   my $fnm= shift;
   my $APT= shift;
+  my $dont_decrypt= shift;
+
   my $obj= new ($fnm, $APT);
   $APT= $obj->{APT};  # use application detection logic in new
   my $b;
@@ -232,7 +269,7 @@ sub openDB
 
   read (FI, $sig, 4);
 
-  # BEGIN to read the record header
+  # BEGIN to read the db header; see save
   my $recheader= &get_recheader (*FI);
   my $lng= $recheader->{'length'};
   print "WARNING lng=$lng, 25 expected!\n" unless ($lng == 25);
@@ -245,9 +282,9 @@ sub openDB
 
   my $time=
   {
-    'year'      => $year,
-    'mon'       => $mon,
-    'day'       => $day,
+    'year'      => $year+1900,
+    'mon'       => $mon+1,
+    'day'       => $day+1,
     'min'       => $min,
   };
 
@@ -267,104 +304,148 @@ sub openDB
   };
 
   $obj->{Header}= $hdr;
+  $APT= $obj->{APT}= &decode_apt ($file_type);
+  # &hex_dump ($b);
+  # print "APT=$APT file_type=$file_type num_recs=$num_recs",
+  #       " cur_viewpt=$cur_viewpt\n";
+  # printf ("lookup_table_offset= 0x%08lX\n", $lookup_table_offset);
 
   # read lookup table
-  my ($v, $i);
-  my $ltbl= [];
-  my $ftbl= [];
+  my ($v, $i, $xrec);
+  my @ltbl= (); # lookup table
+  my @ftbl= (); # "type first" table
 
-  seek (FI, $lookup_table_offset, 0);
-  my $xrec= &get_recheader (*FI);
-  # &print_recheader (*STDOUT, "lookup table:", $xrec);
-  $lng= $xrec->{'length'}-6;
-  $i= read (FI, $b, $lng);
-
-  print "WARNING: could not read complete lookup table; read=$i lng=$lng\n"
-    unless ($i == $lng);
-
-  $i= $num_recs * 8; # 8 byte per lookup table entry
-  print "WARNING: lookup table size seems wrong;",
-        " lng=$lng num_recs=$num_recs $num_recs*8=$i\n"
-     unless ($i == $lng);
-
-  for ($i= 0; $i < $num_recs; $i++)
+  if ($lookup_table_offset > 0)
   {
-    my ($size, $filters, $flags, $off_low, $off)=
-      unpack ('vvCCv', substr ($b, $i*8, 8));
-    $off= $off*256+$off_low;
+    seek (FI, $lookup_table_offset, 0);
+    $xrec= &get_recheader (*FI);
+    # &print_recheader (*STDOUT, "lookup table:", $xrec);
+    $lng= $xrec->{'length'}-6;
+    $i= read (FI, $b, $lng);
 
-    # print "lut [$i] off=$off size=$size\n";
-    my $lut=
+    print "WARNING: could not read complete lookup table; read=$i lng=$lng\n"
+      unless ($i == $lng);
+
+    $i= $num_recs * 8; # 8 byte per lookup table entry
+    print "WARNING: lookup table size seems wrong;",
+          " lng=$lng num_recs=$num_recs $num_recs*8=$i\n"
+       unless ($i == $lng);
+
+    for ($i= 0; $i < $num_recs; $i++)
     {
-      'siz'     => $size,
-      'off'     => $off,
-      'filters' => $filters,
-      'flags'   => $flags,
-    } ;
+      my ($size, $filters, $flags, $off_low, $off)=
+        unpack ('vvCCv', substr ($b, $i*8, 8));
+      $off= $off*256+$off_low;
 
-    push (@$ltbl, $lut);
-  }
-  
-  # $hdr->{lookup_table_header}= $xrec;
-  # $hdr->{lookup_table}= $ltbl;
+      # print "lut [$i] off=$off size=$size\n";
+      my $lut=
+      {
+        'siz'     => $size,
+        'off'     => $off,
+        'filters' => $filters,
+        'flags'   => $flags,
+      } ;
 
-  # typefirst table
-  #
-  # Purpose:
-  #   This table points into the lookup table at the position of the
-  #   first record of each record type
-  # Example:
-  #   lookup data for record 3 of type 4 is at: ltbl [ftbl [4] + 3]
-  # NOTE:
-  #   this is not used here!
-  #
-  # printf ("typefirst table: 0x%08lX\n", $lookup_table_offset + $lng + 6);
-  $i= read (FI, $b, 64);
-  print "WARNING: could not read complete typefirst table; read=$i lng=64\n"
-    unless ($i == 64);
-  for ($i= 0; $i < 32; $i++)
-  {
-    $v= unpack ('v', substr ($b, $i*2, 2));
-    push (@$ftbl, $v);
-  }
-  # $hdr->{typefirst_table}= $ftbl;
+      push (@ltbl, $lut);
+    }
+    # $hdr->{lookup_table_header}= $xrec;
+    # $hdr->{lookup_table}= \@ltbl;
+
+    # typefirst table
+    #
+    # Purpose:
+    #   This table points into the lookup table at the position of the
+    #   first record of each record type
+    # Example:
+    #   lookup data for record 3 of type 4 is at: ltbl [ftbl [4] + 3]
+    # NOTE:
+    #   this is not used here!
+    #
+    # printf ("typefirst table: 0x%08lX\n", $lookup_table_offset + $lng + 6);
+    $i= read (FI, $b, 64);
+    print "WARNING: could not read complete typefirst table; read=$i lng=64\n"
+      unless ($i == 64);
+    for ($i= 0; $i < 32; $i++)
+    {
+      $v= unpack ('v', substr ($b, $i*2, 2));
+      push (@ftbl, $v);
+    }
+    # $hdr->{typefirst_table}= \@ftbl;
+  } # lookup table read
+  # else { print "no lookup table present!\n"; }
 
   $obj->{Meta}= 'Plaintext';
+  $obj->{dont_decrypt}= $dont_decrypt;
   my ($CODE, $CODE_SIZE);       # used to decrypt data records
-  my $lut;                      # analyzed lut entry
-  $i= 0;
-  foreach $lut (@$ltbl)
+
+  for ($i= 0;; $i++)
   {
-    my $off= $lut->{off};
-    my $siz= $lut->{siz} - 6;
+    my ($off, $siz, $type, $lut);
 
-    $i++;
-    if ($siz < 0 || $off < 0)
-    { # empty record
-      # print "[$i] type=???? siz=$siz off=$off\n";
-      next;
+    if ($lookup_table_offset > 0)
+    { # use lookup table to seek each record otherwise read file seqentially
+      last if ($i > $#ltbl);
+
+      $lut= $ltbl [$i];
+
+      $off= $lut->{off};
+      $siz= $lut->{siz} - 6;
+
+      if ($siz < 0 || $off < 0)
+      { # empty record
+        # print "[$i] type=???? siz=$siz off=$off\n";
+        next;
+      }
+
+      seek (FI, $off, 0);
     }
 
-    seek (FI, $off, 0);
-    $xrec= &get_recheader (*FI);
+    last unless (defined ($xrec= &get_recheader (*FI)));
 
-    my $type= $xrec->{type};
-    # next if ($type == 0);
-
-    if ($type < 0 || $type >= 32)
-    {
-      print "WARNING: unknown type: $type; IGNORED\n";
-      &print_recheader (*STDOUT, "record [$i]:", $xrec);
-      next;
-    }
-
+    $siz= $xrec->{length}- 6;
+    $type= $xrec->{type};
     # the real record data!
     read (FI, $b, $siz);
 
-    if ($type > 1 && $obj->{Meta} eq 'Encrypted')
+    if ($type < 0 || $type >= 32)
+    {
+      print "WARNING: unknown record type: $type; IGNORED\n";
+      &print_recheader (*STDOUT,
+                        "record [$i] type=$type siz=$siz off=$off",
+                        $xrec);
+      &hex_dump ($b);
+      next;
+    }
+
+    if (defined ($lut))
+    { # additional record data from the LUT
+      $xrec->{off}= $off;
+      $xrec->{flags}= $lut->{flags};
+      $xrec->{filters}= $lut->{filters};
+    }
+
+    &analyze_record ($obj, $xrec, $i, $b);
+  }
+  # print "LUT table size: i=$i\n";
+
+  close (FI);
+
+  $obj;
+}
+
+# ----------------------------------------------------------------------------
+sub analyze_record
+{
+  my ($obj, $xrec, $i, $b)= @_;
+
+  my $type= $xrec->{type};
+  my $siz= $xrec->{length}-6;
+
+    if ($type > 1 && $obj->{Meta} eq 'Encrypted' && !$obj->{dont_decrypt})
     { # NOTE: currently only decrypts parts of the data correctly!
-      my $kk;
-      print '-'x72, "\nencoded [type=$type, $REC_TYPE[$type]]\n";
+      # password record; this code is very experimental!
+      # my $kk;
+      # print '-'x72, "\nencoded [type=$type, $REC_TYPE[$type]]\n";
       # print "session key=";
       # foreach $kk (@{$obj->{CODE}}) { printf (" 0x%02X", $kk); }
       # print "\n";
@@ -372,20 +453,44 @@ sub openDB
 
       $b= &decode ($b, $siz, $obj->{CODE}, 0);
 
-      print "decoded\n";
-      &hex_dump ($b);
+      # print "decoded\n"; &hex_dump ($b);
     }
 
     $xrec->{data}= $b;
 
-    # additional record data from the LUT
-    $xrec->{off}= $off;
-    $xrec->{flags}= $lut->{flags};
-    $xrec->{filters}= $lut->{filters};
+    # specially handled objects
+    if ($type == 9) # NOTE
+    { # note records may be missing, but they are accessed according
+      # to their index, thus leave the blank entries in the table.
+      $obj->{Types}->[9]->[$xrec->{idx}]= $xrec;
+      return;
+    }
 
-    if ($type == 1)
-    { # password record
+    push (@{$obj->{Types}->[$type]}, $xrec);
+
+    if ($type > 1
+        && $obj->{Meta} eq 'Encrypted'
+        && $obj->{dont_decrypt})
+    { # no usuefull data to process if encrypted
+      return;
+    }
+
+    # Main DB type decoder
+    if ($type == 0)
+    { # record header; this is actually read twice and was already
+      # decoded, see above
+      # NOTE: The DB header seems to get modified as soon as an
+      #       application opens the database to indicate it is busy
+      #       by setting the viewpoint table offset to NULL
+    }
+    elsif ($type == 1)
+    { # password record; this code is very experimental!
       $obj->{Meta}= 'Encrypted';
+
+      if ($obj->{dont_decrypt})
+      { # do not attempt to decrypt this password
+        return;
+      }
 
       # decode and print the password
       my $pass= &decode_password ($b, $siz);
@@ -419,52 +524,45 @@ sub openDB
         }
       }
 
-    } # type == 1, password
+    } # END of type == 1 processing; password record
 
     elsif ($type == 4) # CARDDEF
     { # only one record of this type allowed!!
       $obj->{carddef}= &get_carddef ($b);
     }
-
     elsif ($type == 6) # FIELDDEF
     {
       my ($fdef, $rec_size)= &get_fielddef ($b);
       push (@{$obj->{fielddef}}, $fdef);
       $obj->{rec_size}= $rec_size if ($rec_size > $obj->{rec_size});
     }
-
     elsif ($type == 7) # VIEWPTDEF
     {
       my $vptd= &get_viewptdef ($b);
       push (@{$obj->{viewptdef}}, $vptd);
       $vptd->{index}= $#{$obj->{viewptdef}};
     }
-
-    elsif ($type == 9) # NOTE
-    { # note records may be missing, but they are accessed according
-      # to their index, thus leave the blank entries in the table.
-      $obj->{Types}->[9]->[$xrec->{idx}]= $xrec;
-      next;
-    }
-
     elsif ($type == 10) # VIEWPTTABLE
     {
       push (@{$obj->{viewpttable}}, &get_viewpttable ($b));
     }
-
     elsif ($type == 13) # CARDPAGEDEF
     { # only none or one record of this type allowed!!
       $obj->{cardpagedef}= &get_cardpagedef ($b);
     }
 
     unless ($REC_TYPE[$type])
-    { # application specific data
+    {
+      # application specific data
+      my $APT= $obj->{APT};
+
       if ($type == 14 && $APT eq 'ADB')
       {
         $obj->decode_type14 (*STDOUT, $b);
       }
       else
       { # dump info about other unknown field types
+        my $off= $xrec->{off} || 'SEQ';
         print "[$i] off=$off siz=$siz type=$type APT='$APT'\n";
         &print_recheader (*STDOUT, "record [$i]:", $xrec);
 
@@ -472,14 +570,6 @@ sub openDB
         &hex_dump ($b);
       }
     }
-
-    push (@{$obj->{Types}->[$type]}, $xrec);
-  }
-  # print "LUT table size: i=$i\n";
-
-  close (FI);
-
-  $obj;
 }
 
 # ----------------------------------------------------------------------------
@@ -561,7 +651,7 @@ sub saveDB
   open (FO, ">$fnmo") || die;
   binmode (FI); # MS-DOS systems need this, T2D: how about Mac?
 
-  # save record header
+  # save db header; see also loader
   print FO $hdr->{sig};
   &put_recheader (*FO, $hdr->{recheader});
   my $time= $hdr->{'time'};
@@ -569,9 +659,9 @@ sub saveDB
            $hdr->{release_version},
            $hdr->{file_type}, $hdr->{file_status},
            $hdr->{cur_viewpt}, $hdr->{num_recs},
-           $off,
-           $time->{year}, $time->{mon},
-           $time->{day}, $time->{min},
+           $off, # lookup_table_offset
+           $time->{year}-1900, $time->{mon}-1,
+           $time->{day}-1, $time->{min},
            $hdr->{viewpt_hash},
          );
   print FO $b;
@@ -626,6 +716,34 @@ sub saveDB
   }
 
   close (FO);
+}
+
+# ----------------------------------------------------------------------------
+sub print_summary
+{
+  my $db= shift;
+  my $prt_hdr= shift;
+
+  my $hdr= $db->{Header};
+  my $t= $hdr->{time};
+  my $min= $t->{min};
+  my $h= int ($min/60);
+  $min= $min%60;
+
+  printf ("Type %-24s  Recs View   Hash %16s Comment\n",
+          'Filename', 'modified')
+    if ($prt_hdr);
+
+  my $Comment;
+  $Comment .= ' Password' if ($db->{Meta} eq 'Encrypted');
+
+  printf ("%-4s %-24s %5d %4d 0x%04X %4d-%02d-%02d %2d:%02d%s\n",
+          $db->{APT}, $db->{Filename},
+          $hdr->{num_recs},
+          $hdr->{cur_viewpt}, $hdr->{viewpt_hash},
+          $t->{year}, $t->{mon}, $t->{day}, $h, $min,
+          $Comment,
+         );
 }
 
 # ----------------------------------------------------------------------------
@@ -725,22 +843,77 @@ sub dump_data
 }
 
 # ----------------------------------------------------------------------------
-sub TIEARRAY
+sub dump_type
 {
-  return $_[1];
+  my $self= shift;
+  local *FO= shift;
+  my $Ty= shift;        # if undef, dump all items
+
+  my ($T, $Ty_from, $Ty_end);
+
+  unless (defined ($T= $self->{Types}))
+  {
+    print STDERR "can't access Type table in $self\n";
+    return;
+  }
+
+  if (defined ($Ty)) { $Ty_from= $Ty_end= $Ty; }
+  else { $Ty_from= 0; $Ty_end= 255; }
+
+  for ($Ty= $Ty_from; $Ty <= $Ty_end; $Ty++)
+  {
+    my $D= $T->[$Ty];
+    my $c= $#$D;
+    next if ($c == -1);
+
+    my $ty_str= $REC_TYPE[$Ty] || "USER$Ty";
+
+    my ($i, $Dk, $Dv, $cp, $ch, $cv, $lng, $llng);
+    for ($i= 0; $i <= $c; $i++)
+    {
+      print FO "<record>$Ty $ty_str $i/$c\n";
+
+      $Dv= $D->[$i];
+      # NOTE: fields not written: off (completely redundant)
+      # off filters flags come from the LUT
+      foreach $Dk (qw(type idx length status filters flags))
+      {
+        next unless (defined ($Dv->{$Dk}));
+        print FO "<$Dk>$Dv->{$Dk}\n";
+      }
+      print FO "<data>\n";
+      # &hex_dump ($Dv->{data}, *FO);
+
+      my $data= $Dv->{data};
+      $lng= length ($data);
+      for ($cp= 0; $cp < $lng; $cp++)
+      {
+        $cv= unpack ('C', $ch= substr ($data, $cp, 1));
+
+        if (($cv >= 0x00 && $cv <= 0x1F)
+            || ($cv >= 0x3C && $cv <= 0x3E)
+            || ($cv >= 0x7F && $cv <= 0xFF)
+           )
+        {
+          $ch= sprintf ("=%02X", $cv);
+          $llng += 3;
+        }
+        else { $llng++; }
+
+        print FO $ch;
+        if ($llng > 72) { print FO "=\n"; $llng= 0; }
+      }
+      if ($llng > 0) { print FO "\n"; $llng= 0; }
+
+      print FO "</data>\n</record>\n\n";
+    }
+  }
 }
 
 # ----------------------------------------------------------------------------
-sub FETCH_raw
+sub TIEARRAY
 {
-  my $db= shift;
-  my $idx= shift;
-
-  my $T= $db->{Types} || return undef;
-  my $D= $T->[11];      # array of data records
-  return undef if ($idx > $#$D);
-
-  $D->[$idx]->{data};   # data record for the given index
+  return $_[1];
 }
 
 # ----------------------------------------------------------------------------
@@ -772,6 +945,32 @@ sub FETCH
   }
 
   return $rv;
+}
+
+# ----------------------------------------------------------------------------
+sub FETCH_data_raw
+{
+  my $db= shift;
+  my $idx= shift;
+
+  my $T= $db->{Types} || return undef;
+  my $D= $T->[11];      # array of data records
+  return undef if ($idx > $#$D);
+
+  $D->[$idx]->{data};   # data record for the given index
+}
+
+# ----------------------------------------------------------------------------
+sub FETCH_note_raw
+{
+  my $db= shift;
+  my $idx= shift;
+
+  my $T= $db->{Types} || return undef;
+  my $N= $T->[9];      # array of note records
+  return undef if ($idx > $#$N);
+
+  $N->[$idx]->{data};   # data record for the given index
 }
 
 # ----------------------------------------------------------------------------
@@ -808,6 +1007,33 @@ sub STORE
 
   # T2D: unfinished
   # missing items: refreshing and/or invalidating view points
+  $db->{update}++;
+}
+
+# ----------------------------------------------------------------------------
+sub STORE_data_raw
+{
+  my $db= shift;
+  my $idx= shift;
+  my $data= shift;
+
+  my $T= $db->{Types} || die;
+  my $D= $T->[11];  # array of data records
+  $D->[$idx]->{data}= $data;
+  $db->{update}++;
+}
+
+# ----------------------------------------------------------------------------
+sub STORE_note_raw
+{
+  my $db= shift;
+  my $idx= shift;
+  my $data= shift;
+
+  my $T= $db->{Types} || die;
+  my $N= $T->[9];   # array of note records
+  $N->[$idx]->{data}= $data;
+  $db->{update}++;
 }
 
 # ----------------------------------------------------------------------------
@@ -841,6 +1067,30 @@ sub fmt_date
   ($year == $no_year && $mon == $no_mon && $day == $no_day)
   ? '' # empty date field
   : sprintf ("%d-%02d-%02d", 1900 + $year, $mon+1, $day+1);
+}
+
+# ----------------------------------------------------------------------------
+sub pack_date
+{
+  my $val= shift;
+  my ($year, $mon, $day);
+
+  $year= $mon= $day= $no_date;
+  if ($val =~ /(\d+)-(\d+)-(\d+)/)
+  {
+    ($year, $mon, $day)= ($1, $2, $3);
+    # check for valid dates otherwise set no_date value
+    $year= $mon= $day= $no_date
+    if ($year < 1900 || $year > 2155
+        || $mon < 1 || $mon > 12
+        || $day < 1 || $day > 31);
+
+    $year -= 1900;
+    $mon--;
+    $day--;
+  }
+
+  pack ('CCC', $year, $mon, $day);
 }
 
 # ----------------------------------------------------------------------------
@@ -1018,6 +1268,8 @@ sub store_data
 
   # print "rec_size= $rec_size\n";
 
+  # NOTE: ADB records should possibly not be handled here at all!!!
+
   FIELD: foreach $field (@$Fdef)
   {
     my $type= $field->{ftype};
@@ -1069,29 +1321,14 @@ sub store_data
 
         my ($h, $m, $t);
         $h= $val;
-        ($h, $m)= ($1, $2) if ($val =~ /(\d+):(\d+)/);
+        ($h, $m)= ($1, $2) if ($val =~ /(\d+)[:\.](\d+)/);
         $t= $h*60+$m;
         $t= $no_time if (!$ex || $t < 0 || $t > $no_time);
         $b [$off]= pack ('v', $t);
       }
       elsif ($type == 8)        # DATE
       {
-        my ($year, $mon, $day);
-
-        $year= $mon= $day= $no_date;
-        if ($ex && $val =~ /(\d+)-(\d+)-(\d+)/)
-        {
-          ($year, $mon, $day)= ($1, $2, $3);
-          # check for valid dates otherwise set no_date value
-          $year= $mon= $day= $no_date
-            if ($year < 1900 || $year > 2155
-                || $mon < 1 || $mon > 12
-                || $day < 1 || $day > 31);
-          $year -= 1900;
-          $mon--; $day--;
-        }
-
-        $b [$off]= pack ('CCC', $year, $mon, $day);
+        $b [$off]= &pack_date ($val);
       }
       elsif ($type == 9)        # RADIO_BUTTON
       { # several radio buttons point to the same offset
@@ -1694,7 +1931,15 @@ HP200LX::DB - Perl module to access HP-200 LX database files
     TIEARRAY                            stub to get an tie for the database
     FETCH                               retrieve a record
     STORE                               store a record
+
+  additional data retrieval and storage methods:
+    $db->FETCH_data_raw ($idx)          retrieve raw data record
+    $db->FETCH_note_raw ($idx)          retrieve raw note record
+    $db->STORE_data_raw ($idx, $data)   store raw data record
+    $db->STORE_note_raw ($idx, $note)   store raw note record
     $db->get_last_index ()              return highest index
+
+  additional UNIMPLEMENTED data manipulation methods:
     T2D: $db->DELETE ($num)             delete given data record
     T2D: $db->INSERT ($num)             insert a new object at index
 
@@ -1702,6 +1947,8 @@ HP200LX::DB - Perl module to access HP-200 LX database files
     $db->show_db_def (*FH)              show database definition
     $db->show_card_def (*FH)            show card layout definition
     $db->get_field_def ($num)           retrieve field definition
+    $db->print_summary ($header)        print DB summary line;
+                                        print also header if $header==1
     show_field_def                      show a field definition
     fetch_data                          used by FETCH to get db record
     store_data                          used by STORE to save db record

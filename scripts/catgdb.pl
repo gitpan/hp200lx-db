@@ -4,7 +4,7 @@
 # print data records of a HP 200LX DB 
 #
 # written:       1998-01-11
-# latest update: 1999-02-22 20:39:11
+# latest update: 1999-05-23 13:59:22
 #
 
 use HP200LX::DB;
@@ -17,6 +17,7 @@ $show_fields= 1;
 $show_db_def= 0;
 $show_notes= 1;
 $format= 1;
+$print_header= 1;
 
 ARGUMENT: while (defined ($arg= shift (@ARGV)))
 {
@@ -27,6 +28,8 @@ ARGUMENT: while (defined ($arg= shift (@ARGV)))
     elsif ($arg =~ /^-dbdef/)   { $show_db_def= 1;      }
     elsif ($arg =~ /^-nono/)    { $show_notes= 0;       }
     elsif ($arg =~ /^-for/)     { $format= shift (@ARGV); }
+    elsif ($arg =~ /^-sum/)     { $format= 'summary'; }
+    elsif ($arg =~ /^-dump/)    { $format= 'dump'; }
     else
     {
       &usage;
@@ -41,6 +44,8 @@ ARGUMENT: while (defined ($arg= shift (@ARGV)))
 foreach $job (@JOBS)
 {
   if ($format eq '2') { &print_gdb_2 ($job); }
+  elsif ($format eq 'dump') { &print_gdb_dump ($job); }
+  elsif ($format eq 'summary') { &print_gdb_summary ($job); }
   else { &print_gdb ($job); }
 }
 
@@ -60,6 +65,8 @@ Options:
 -noh                    ... hide header
 -nonotes                ... hide the notes records
 -format <name>          ... dump data in format
+-dump                   ... dump everything in printable form
+-sum)ary                ... write only a summary line abut each DB
 
 -format 2               Full Export Format (to be completed)
 missing items:
@@ -127,6 +134,41 @@ sub print_gdb
 }
 
 # ----------------------------------------------------------------------------
+sub print_gdb_summary
+{
+  my $fnm= shift;
+
+  my (@data, $i);
+
+  my $db= HP200LX::DB::openDB ($fnm, undef, 1); # no decryption
+  $db->print_summary ($print_header);
+  $print_header= 0;
+}
+
+# ----------------------------------------------------------------------------
+sub print_gdb_dump
+{
+  my $fnm_db= shift;
+  my $fnm_out= shift;
+  local *FO;
+
+  if (defined ($fnm_out))
+  {
+    unless (open (FO, ">$fnm_out"))
+    {
+      print STDERR "can't write to $fnm_out\n";
+    }
+  }
+  else { *FO= *STDOUT; }
+
+  my $db= HP200LX::DB::openDB ($fnm_db, undef, 1);
+
+  $db->dump_type (*FO);
+
+  close (FO) if (defined ($fnm_out));
+}
+
+# ----------------------------------------------------------------------------
 sub print_gdb_2
 {
   my $fnm= shift;
@@ -161,8 +203,8 @@ sub print_gdb_2
     my $rec= $data[$i];
     my $fld;
 
-    print "&idx:$i\n";
     print "&type:data\n";
+    print "&idx:$i\n";
     foreach $fld (sort keys %$rec)
     {
       my $val= $rec->{$fld};

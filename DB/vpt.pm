@@ -53,7 +53,7 @@
 #   DONE: view points are re-calculated even if no data is there.
 #
 # written:       1998-06-01
-# latest update: 1999-02-22 20:46:52
+# latest update: 1999-05-24 12:52:25
 #
 
 package HP200LX::DB::vpt;
@@ -62,7 +62,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA= qw(Exporter);
 @EXPORT= qw(get_viewptdef   find_viewptdef   get_viewptdef_count
             get_viewpttable find_viewpttable

@@ -1,10 +1,10 @@
 #
 # FILE .../CPAN/hp200lx-db/README
 #
-# $VERSION= '0.06';
+# $VERSION= '0.07';
 #
 # written:       1998-01-10
-# latest update: 1999-02-22 20:31:54
+# latest update: 1999-05-23 11:18:31
 #
 
 Purpose:
@@ -12,9 +12,8 @@ Purpose:
   DB.pm implements the perl package HP200LX::DB which is intended
   to provide a perl 5 interface for files in the generic database
   format of the HP 200LX palmtop computer.  The perl modules are
-  intended to be used on a work station such as a PC or a Unix
-  machine to read and write data records from and to a database
-  file.
+  intended to be used on a work station such as a Unix machine or
+  a PC to read and write data records from and to a database file.
 
 Goals and Non-Goals of this Project:
 
@@ -24,7 +23,7 @@ Goals and Non-Goals of this Project:
   reconciliation were not considered at all yet.  Also, other
   built-in applications operate on slightly different DB files,
   these are not dealt with yet.  The creation, definition and layout
-  are not handled yet.
+  of new databases are not handled yet.
 
   Project Roadmap:
   1. read/write GDB, PDB, and NDB files [quite complete]
@@ -32,7 +31,7 @@ Goals and Non-Goals of this Project:
   3. tools to import/export data in different formats [in progress]
   4. extend the DB module for ADB and WDB files [in progress]
   5. creation of DB files including format definitions etc.
-  6. dealing with encrypted DB files
+  6. dealing with encrypted DB files [in progress]
 
 Status:
 
@@ -41,14 +40,15 @@ Status:
   own risk, no support can be provided but bug reports and suggestions
   by e-mail are welcome.  Please read the notes below first.
 
-  **WARNING**  This is already working but it's not completed yet!
-
   Note: The package emits all sorts of diagnostic information, these
         are not errors and change from release to release, depending
         on the development progress.
 
   Note: The DB formats have a number of limitations, this package
         tries to enforce them but most are not dealt with properly yet.
+
+  Note: reading ADB files is fairly complete, an extension which
+        can also write and update ADB files is currently in development.
 
 Installation:
 
@@ -71,24 +71,26 @@ Limitations:
 
   + Databases can only be read or updated.  It's not possible to
     create a database from scratch.
+  + Only GDB, PDB and NDB files are covered, the more special formats
+    ADB and WDB need a few more hacks.  As of now, these files can
+    be read but not written!
   + When storing records to the database, make sure that fieldnames
-    match exactly, including blanks, case, and national charactters.
+    match exactly, including blanks, case, and national characters.
   + Lines in note fields should be stored with \r\n line endings.
+    This is not checked here.
   + The viewpoint table is not rebuilt by default when a database is
     updated.  This must be done explicitly on the HP 200LX after loading
     the database by starting the "SORT" dialog.
     Resorting a view point is usually done by pressing F7 and F10.
-    The DB now supports a method to update view points too:
+    The DB also supports a method to update view points:
       $db->refresh_viewpt (-1);
-  + Databases with password protection are not handled yet, it
-    is however possible to read the password using the
+  + Databases with password protection are not handled yet correctly,
+    it is however possible to read the password using the
       $db->recover_password ();
     method!
+
     If you didn't already know, the password protection is not
-    very robust in the HP-LX!
-  + Only GDB, PDB and NDB files are covered, the more special formats
-    ADB and WDB need a few more hacks.  As of now, these files can
-    be read but not written!
+    very secure in the HP-LX!
   + Be also aware of Perl's limited TIEARRAY implementation.
     Array elements need to be accessed by index.  No push, pop,
     shift and unshift operators are available.

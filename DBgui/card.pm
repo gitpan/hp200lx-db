@@ -7,7 +7,7 @@
 # + DEL records
 #
 # written:       1998-03-08
-# latest update: 1999-02-22 20:47:54
+# latest update: 1999-05-24 12:52:34
 #
 
 package HP200LX::DBgui::card;
@@ -16,7 +16,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;
@@ -134,47 +134,47 @@ sub make_field
     # print "create frame at y=$y name=$name\n";
   }
 
-  # $L= $frame->Label (text => $name);
+  # $L= $frame->Label (-text => $name);
   my ($E, $L, %pack);
-  my %packf= (fill => 'x');     # packing of the enclosing frame
+  my %packf= (-fill => 'x');     # packing of the enclosing frame
   if ($type eq 'WORDBOOL' || $type eq 'RADIO_BUTTON')
   {
-    $E= $frame->Checkbutton (text => $name, variable => $tv);
+    $E= $frame->Checkbutton (-text => $name, -variable => $tv);
   }
   elsif ($type eq 'NOTE')
   {
-    $L= $frame->Label (text => $name);
+    $L= $frame->Label (-text => $name);
     $E= $frame->Scrolled ('Text',
-                          width => $Lw, height => $h/8,
-                          scrollbars => 'e');
-    %pack= %packf= (fill => 'both', expand => 1);
+                          -width => $Lw, -height => $h/8,
+                          -scrollbars => 'e');
+    %pack= %packf= (-fill => 'both', -expand => 1);
   }
   elsif ($type eq 'GROUP')
   {
-    $L= $frame->Label (text => $name);
+    $L= $frame->Label (-text => $name);
   }
   elsif ($type eq 'COMBO')
   {
-    $E= $frame->Entry (width => $Lw, textvariable => $tv);
+    $E= $frame->Entry (-width => $Lw, -textvariable => $tv);
     print "combo field: y=$y\n";
-    %pack= (fill => 'x', expand => 1);
+    %pack= (-fill => 'x', -expand => 1);
   }
   else
   {
-    $L= $frame->Label (text => $name);
-    $E= $frame->Entry (width => $Lw, textvariable => $tv);
-    %pack= (fill => 'x', expand => 1);
+    $L= $frame->Label (-text => $name);
+    $E= $frame->Entry (-width => $Lw, -textvariable => $tv);
+    %pack= (-fill => 'x', -expand => 1);
   }
   
   if ($L)
   {
     $frame->{L}= $L;
-    $L->pack (side => 'left');
+    $L->pack (-side => 'left');
   }
   if ($E)
   {
     $frame->{E}= $E;
-    $E->pack (side => 'left', %pack);
+    $E->pack (-side => 'left', %pack);
   }
 
   $frame->pack (%packf);

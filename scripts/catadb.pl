@@ -16,68 +16,22 @@
 # + analyze notes field
 #
 # written:       1998-09-20
-# latest update: 1999-02-22 20:38:52
+# latest update: 1999-05-23 11:41:27
 #
 
-use HP200LX::DB;
+# use HP200LX::DB;
 use HP200LX::DB::recurrence;
+use HP200LX::DB::adb qw(openADB);
 use HP200LX::DB::tools;
 
 $Author= 'g.gonter@ieee.org';
 $Application= 'HP200LX::DB catadb.pl';
-$Appl_Version= '0.06';
+$Appl_Version= '0.07';
 
 $format= 'vcs';
 $folding= 'rfc';        # none, rfc [DEFAULT], simple
 $show_db_def= $show_diag= 0;
 $select= 'all'; # all or table
-
-%LANG=
-(
-  'German' =>
-  {
-    # Both
-    'SUMMARY'         => 'Beschreib.',
-    'CATEGORIES'      => 'Kategorie',           # how can this be set??
-    'DTSTART'         => 'Beginndatum',         # append time!
-    'DESCRIPTION'     => 'Notiz',
-
-    # Date/Event
-    'START_TIME'      => 'Beginnzeit',
-    'END_TIME'        => 'Endzeit   ',
-    'ALARM'           => 'Meldung',
-    'ALARM_ADV'       => 'Vorlauf',
-    'LOCATION'        => 'Ort      ',
-    'X-200LX-NUM-DAYS'  => "# aufein\'folg. Tage",
-
-    # To-Do
-    'X-200LX-DUE'       => "F\204lligkeitstermin ",   # Offset it days! (T2D)
-    'COMPLETED'         => "Abschlu\341datum",
-    'X-200LX-PRIORITY'  => 'Priorit\204t   ',
-  },
-
-  'English' =>
-  {
-    # Both
-    'SUMMARY'         => 'Description',
-    'CATEGORIES'      => 'Category',           # how can this be set??
-    'DTSTART'         => 'Start Date ',         # append time!
-    'DESCRIPTION'     => 'Note',
-
-    # Date/Event
-    'START_TIME'      => 'Start Time ',
-    'END_TIME'        => 'End Time   ',
-    'ALARM'           => 'Alarm',
-    'ALARM_ADV'       => 'Leadtime',
-    'LOCATION'        => 'Location   ',
-    'X-200LX-NUM-DAYS'  => '#Consecutive Days',
-
-    # To-Do
-    'X-200LX-DUE'       => 'Due Date   ',   # Offset it days! (T2D)
-    'COMPLETED'         => 'Completion Date',
-    'X-200LX-PRIORITY'  => 'Priority   ',
-  },
-);
 
 local *FO;
 my $fnm_out;
@@ -148,33 +102,6 @@ END_OF_USAGE
 }
 
 # ----------------------------------------------------------------------------
-sub select_language
-{
-  my $db= shift;
-
-  my $desc= $db->get_field_def (0);
-  my $desc_name= $desc->{name};
-
-  foreach $lng (keys %LANG)
-  {
-    $lang= $LANG{$lng};
-    if ($lang->{SUMMARY} eq $desc_name)
-    {
-      print "selecting langauge '$lng'\n" if ($show_diag);
-      return $lang;
-    }
-  }
-
-  print <<EO_NOTE;
-unknown langauge, name of description field= '$desc_name' !
-please send a sample of an appointment book in this language to
-  g.gonter\@ieee.org
-EO_NOTE
-
-  return undef;
-}
-
-# ----------------------------------------------------------------------------
 sub print_adb_vcs
 {
   local *FO= shift;
@@ -182,9 +109,17 @@ sub print_adb_vcs
 
   my (@data, $i, $field, $val);
 
-  my $db= HP200LX::DB::openDB ($fnm);
+  my $db= openADB ($fnm);
 
-  my $lang= &select_language ($db);
+  unless ($db->{APT} eq 'ADB')
+  {
+    print "not an appointment book! (ADB file)!\n",
+          "try catgdb instead!\n";
+    return;
+  }
+
+  $lang= $db->select_language ();
+  print "selecting language '$lang->{_language}'\n" if ($show_diag);
   my $AD= $db->{APT_Data};
   my $table= $AD->{View_Table};
 
@@ -214,6 +149,7 @@ sub print_adb_vcs
 BEGIN:VCALENDAR
 VERSION:$VERSION
 PRODID:-//$Author//NONSGML $Application $Appl_Version//EN
+X-COUNT:$db_count
 
 EO_VCS
 
@@ -232,7 +168,6 @@ EO_VCS
   }
 
   print FO "END:VCALENDAR\n\n";
-
 }
 
 # ----------------------------------------------------------------------------
@@ -243,24 +178,16 @@ sub print_entry
   my $idx= shift;
   my $blk;
 
-  my $rec= $db->FETCH ($idx);
+  my $rec= $db->fetch_adb_entry ($idx, $show_diag);
   return unless (defined ($rec));
-  my $raw= $db->FETCH_raw ($idx);
+  my $recurrence= $rec->{_recurrence};
+  my $raw= $rec->{_raw};
 
   print "entry number: $idx\n" if ($show_diag);
   my $entry_type= $rec->{type};
-  my $recurrence;
 
-    my ($v1, $cat, $loc, $v2, $n, $v3, $v4)= unpack ('vvvvvvv', $raw);
-
-    if ($v2 < length ($raw))
-    {
-      $recurrence= new HP200LX::DB::recurrence ($rec->{repeat},
-                      $blk= substr ($raw, $v2));
-    }
-
-    if ($entry_type eq 'Date')
-    {
+  if ($entry_type eq 'Date')
+  {
       print FO <<EO_VCS;
 BEGIN:VEVENT
 CATEGORIES:PERSONAL
@@ -281,9 +208,9 @@ EO_VCS
       &print_list (*FO, $rec, $lang, 1, $folding, 'X-200LX-NUM-DAYS');
 
       print FO "END:VEVENT\n\n";
-    }
-    else
-    {
+  }
+  else
+  {
       print FO <<EO_VCS;
 BEGIN:VTODO
 CATEGORIES:PERSONAL
@@ -305,33 +232,46 @@ EO_VCS
       &print_list (*FO, $rec, $lang, 1, $folding, 'X-200LX-DUE');
 
       print FO "END:VTODO\n\n";
-    }
+  }
 
-    if ($show_diag)
+  if ($show_diag)
+  {
+    my $fld;
+    foreach $fld (sort keys %$rec)
     {
-      my $fld;
-      foreach $fld (sort keys %$rec)
-      {
-        print $fld, '=', $rec->{$fld}, "\n";
-      }
+      print $fld, '=', $rec->{$fld}, "\n";
     }
+  }
 
-    # &HP200LX::DB::hex_dump ($raw, *STDOUT);
-    if ($recurrence && $show_diag)
+  if ($recurrence)
+  {
+    $recurrence->print_recurrence_status (*STDOUT);
+  }
+
+  # &HP200LX::DB::hex_dump ($$raw, *STDOUT);
+  if ($show_diag)
+  {
+    my $cat_str= HP200LX::DB::get_str ($raw, $rec->{_cat});
+
+    printf ("YYY 1 prev=0x%04X next=0x%04X lng=0x%04X\n",
+            $rec->{'_prev'}, $rec->{'_next'}, length ($$raw));
+    printf ("YYY 2 cat=0x%04X cat_str='%s'\n", $rec->{_cat}, $cat_str)
+      if ($cat_str);
+
+    if ($recurrence)
     {
-      printf ("YYY v1=0x%04X v2=0x%04X v3=0x%04X v4=0x%04X lng=0x%04X\n",
-            $v1, $v2, $v3, $v4, length ($raw));
-      # print "repeats:\n";
-      $recurrence->print_recurrence_status (*STDOUT);
-
       print "recurrence data\n";
       &HP200LX::DB::hex_dump ($blk, *STDOUT);
-
     }
-      print "record data\n";
-      &HP200LX::DB::hex_dump ($raw, *STDOUT);
+  }
 
-    print '=' x72, "\n\n" if ($show_diag);
+  if ($show_diag)
+  {
+    print "record data\n";
+    &HP200LX::DB::hex_dump ($$raw, *STDOUT);
+
+    print '=' x72, "\n\n";
+  }
 }
 
 # ----------------------------------------------------------------------------

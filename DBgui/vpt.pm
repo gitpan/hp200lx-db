@@ -2,7 +2,7 @@
 # FILE HP200LX/DBgui/vpt.pm
 #
 # written:       1998-08-09
-# latest update: 1999-02-22 20:48:14
+# latest update: 1999-05-24 12:52:53
 #
 
 package HP200LX::DBgui::vpt;
@@ -11,7 +11,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;
@@ -36,14 +36,14 @@ sub new
   bless $obj, $class;
 
   my $lbf= $top->Frame ();
-  my $sb= $lbf->Scrollbar (orient => 'vertical', width => 10)
-          ->pack (side => 'right', fill => 'y', expand => 1);
+  my $sb= $lbf->Scrollbar (-orient => 'vertical', -width => 10)
+          ->pack (-side => 'right', -fill => 'y', -expand => 1);
 
-  my $lb= $lbf->Listbox (width => 64, height => 10,
-                 yscrollcommand => ['set', $sb])
-              ->pack (side => 'left', fill => 'both', expand => 1);
+  my $lb= $lbf->Listbox (-width => 64, -height => 10,
+                 -yscrollcommand => ['set', $sb])
+              ->pack (-side => 'left', -fill => 'both', -expand => 1);
 
-  $lbf->pack (side => 'top', fill => 'y');
+  $lbf->pack (-side => 'top', -fill => 'y');
 
   my $db= $DBgui->{db};
   my ($vpt, $i);
@@ -67,11 +67,11 @@ sub new
   my $b;
   foreach $b (@buttons)
   {
-    $bbf->Button ('text' => $b->[0], 'command' => $b->[1])
-        ->pack (side => 'left', 'fill' => 'x', expand => 1);
+    $bbf->Button ('-text' => $b->[0], '-command' => $b->[1])
+        ->pack (-side => 'left', '-fill' => 'x', -expand => 1);
   }
 
-  $bbf->pack (side => 'bottom', 'fill' => 'x', expand => '1');
+  $bbf->pack (-side => 'bottom', '-fill' => 'x', -expand => '1');
 
   $obj;
 }

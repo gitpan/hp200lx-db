@@ -4,6 +4,7 @@ T2D
 MANIFEST
 Makefile.PL
 DB.pm
+DB/adb.pm
 DB/vpt.pm
 DB/recurrence.pm
 DB/tools.pm
@@ -13,6 +14,7 @@ DBgui/list.pm
 DBgui/vpt.pm
 test.pl
 test.gdb
+docs/announce-0.07.txt
 docs/adb-format.html
 docs/adb-dumps.html
 docs/ndb-format.html
