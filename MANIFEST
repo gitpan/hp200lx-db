@@ -1,0 +1,15 @@
+Changes
+README
+DB.pm
+DBcard.pm
+DBgui.pm
+DBlist.pm
+DBvpt.pm
+MANIFEST
+Makefile.PL
+test.pl
+test.gdb
+demo/demo1.pl
+scripts/catgdb.pl
+scripts/txt2ndb.pl
+scripts/leer.ndb
