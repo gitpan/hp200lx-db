@@ -4,22 +4,29 @@
 # print data records of a HP 200LX DB 
 #
 # written:       1998-01-11
-# latest update: 1998-06-18 16:49:13
+# latest update: 1999-02-22 20:39:11
 #
 
 use HP200LX::DB;
+use HP200LX::DB::tools;
 
 # initializiation
 $FS= ';';
 $RS= "\n";
 $show_fields= 1;
+$show_db_def= 0;
+$show_notes= 1;
+$format= 1;
 
-ARGUMENT: while (defined ($arg= shift (ARGV)))
+ARGUMENT: while (defined ($arg= shift (@ARGV)))
 {
   if ($arg =~ /^-/)
   {
-    if ($arg eq '-')            { push (JOBS, $arg);    }
+    if ($arg eq '-')            { push (@JOBS, $arg);   }
     elsif ($arg =~ /^-noh/)     { $show_fields= 0;      }
+    elsif ($arg =~ /^-dbdef/)   { $show_db_def= 1;      }
+    elsif ($arg =~ /^-nono/)    { $show_notes= 0;       }
+    elsif ($arg =~ /^-for/)     { $format= shift (@ARGV); }
     else
     {
       &usage;
@@ -28,12 +35,13 @@ ARGUMENT: while (defined ($arg= shift (ARGV)))
     next;
   }
 
-  push (JOBS, $arg);
+  push (@JOBS, $arg);
 }
 
 foreach $job (@JOBS)
 {
-  &print_gdb ($job);
+  if ($format eq '2') { &print_gdb_2 ($job); }
+  else { &print_gdb ($job); }
 }
 
 # cleanup
@@ -47,7 +55,19 @@ sub usage
 usage: $0 [-options] [filenanme]
 
 Options:
--help           ... print help
+-help                   ... print help
+-dbdef                  ... dump database definition
+-noh                    ... hide header
+-nonotes                ... hide the notes records
+-format <name>          ... dump data in format
+
+-format 2               Full Export Format (to be completed)
+missing items:
+  cardpage
+  db_header
+
+T2D (format 2):
+  option: show names of empty fields
 END_OF_USAGE
 }
 
@@ -58,10 +78,18 @@ sub print_gdb
   my $fnm= shift;
 
   my (@data, $i);
+  my %hide;             # hidden fields
 
   my $db= HP200LX::DB::openDB ($fnm);
-  my $db_cnt= $db->get_last_index ();
 
+  if ($show_db_def)
+  {
+      print "database definition:\n:"; $db->show_db_def (*STDOUT);
+    # print "card definition:\n:";     $db->show_card_def (*STDOUT);
+    $db->dump_def (*STDOUT);
+  }
+
+  my $db_cnt= $db->get_last_index ();
   tie (@data, HP200LX::DB, $db);
 
   for ($i= 0; $i <= $db_cnt; $i++)
@@ -69,21 +97,79 @@ sub print_gdb
     my $rec= $data[$i];
     my $fld;
 
-    if ($show_fields && $i == 0)
-    {
+    if ($i == 0)
+    { # when the first record is processed, print header and find notes
       foreach $fld (sort keys %$rec)
       {
-        print $fld, $FS;
-        $show_fields= 0;
+        if (!$show_notes && $fld =~ /(.+)\&/)
+        {
+          $hide{$1}++;
+          $hide{$fld}++;
+        }
       }
-      print $RS;
+      foreach $fld (sort keys %$rec)
+      {
+        print $fld, $FS if ($show_fields && !defined ($hide{$fld}));
+      }
+
+      print $RS if ($show_fields);
+      $show_fields= 0;
     }
 
     foreach $fld (sort keys %$rec)
     {
+      next if (defined ($hide{$fld}));
       print $rec->{$fld}, $FS;
     }
     print $RS;
   }
 
 }
+
+# ----------------------------------------------------------------------------
+sub print_gdb_2
+{
+  my $fnm= shift;
+
+  my (@data, $i);
+
+  my $db= HP200LX::DB::openDB ($fnm);
+
+  if ($show_db_def)
+  {
+      print "database definition:\n"; $db->show_db_def (*STDOUT);
+    $db->show_card_def (*STDOUT);
+
+    my $vpt_cnt= $db->get_viewptdef_count;
+    for ($i= 0; $i <= $vpt_cnt+100; $i++)
+    {
+      my $def= $db->find_viewptdef ($i);
+      last unless (defined ($def));
+
+      # print ">>> ", join (':', keys %$def), "\n";
+      print "&type:vpt\n";
+      print "&idx:$i\n";
+      HP200LX::DB::vpt::show_viewptdef ($def, *STDOUT);
+    }
+  }
+
+  my $db_cnt= $db->get_last_index ();
+  tie (@data, HP200LX::DB, $db);
+
+  for ($i= 0; $i <= $db_cnt; $i++)
+  {
+    my $rec= $data[$i];
+    my $fld;
+
+    print "&idx:$i\n";
+    print "&type:data\n";
+    foreach $fld (sort keys %$rec)
+    {
+      my $val= $rec->{$fld};
+      # print $fld, '=', $val, "\n" if ($val);
+      print_content_line (*STDOUT, $fld, $val, 'rfc', 0) if ($val);
+    }
+    print "\n";
+  }
+}
+

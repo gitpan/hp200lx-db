@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl
-# FILE %gg/perl/HP200LX/DBvpt.pm
+# FILE .../CPAN/hp200lx-db/DB/vpt.pm
 #
 # View Point Management
 # +  retrieve view point definintions
@@ -14,6 +14,7 @@
 # 2. a view point table, containing the actual list of data record
 #    indices in the appropriately sorted sequece and filtered using
 #    the defined SSL criterium.
+# 3. SSL == Select and Sort List (or so)
 #
 # At least one view point (VPT #0) is always present, it does not allow
 # a SSL criterium and always includes all data.  However, sorting criteria
@@ -21,39 +22,52 @@
 #
 # included by DB.pm
 #
+# exported methods:
+#   $db->find_viewptdef                 retrieve a view point definition
+#   $db->get_viewptdef_count
+#
 # exported functions:
 #   get_viewptdef                       decode a view point definition
-#   find_viewptdef                      retrieve a view point definition
 #   get_viewpttable                     decode a view point table
 #   find_viewpttable                    retrieve a view point table
+#   refresh_viewpt                      actively refresh a view point
 #
-# Diagnostics and Debugging:
+# internal functions:
+#   refresh_viewpt_table                perform the refreshing of a view point
+#   time_cmp                            sort function to compare two time vals
+#   sort_viewpt                         sort a complete view point table
+#   parse_ssl_tok_str                   analyze the SSL string
+#
+# diagnostics and debugging methods:
 #   show_viewptdef                      print details about a view point
 #
 # T2D:
 # + re-calculate a view point table
 #   DONE: SSL parser and evaluater are present but not complete
-#   MISSING: sorting the fields
+#   MISSING: sorting all the fields
 # + converter for SSL string to SSL tokens (and vica versa?)
 #   This can be used to edit the SSL string in an application
 # + currently, there is no difference between a view point which
 #   needs to be rebuilt and a view point with no data records.
 #   In both cases, the view point table is empty.
+#   DONE: view points are re-calculated even if no data is there.
 #
 # written:       1998-06-01
-# latest update: 1998-06-28 21:58:31
+# latest update: 1999-02-22 20:46:52
 #
 
-package HP200LX::DBvpt;
+package HP200LX::DB::vpt;
 
 use strict;
 use vars qw($VERSION @ISA @EXPORT);
 use Exporter;
 
-$VERSION = '0.03';
+$VERSION = '0.06';
 @ISA= qw(Exporter);
-@EXPORT= qw(get_viewptdef   find_viewptdef
-            get_viewpttable find_viewpttable);
+@EXPORT= qw(get_viewptdef   find_viewptdef   get_viewptdef_count
+            get_viewpttable find_viewpttable
+            refresh_viewpt
+           );
 
 my $delim= '-' x 74;            # optic delimiter
 my $no_val=  65535;             # NIL, empty list, -1 etc.
@@ -98,6 +112,7 @@ sub get_viewptdef
   my $vptd=
   {
     'name'      => $name,
+    'index'     => 0,           # filled in by calling module
     'flags'     => $flg,
     'tok_lng'   => $tok_lng,
     'str_lng'   => $str_lng,
@@ -109,6 +124,15 @@ sub get_viewptdef
 
   # &show_viewptdef ($vptd, *STDOUT);
   $vptd;
+}
+
+# ----------------------------------------------------------------------------
+sub get_viewptdef_count
+{
+  my $db= shift;
+  my $vptdl= $db->{viewptdef};  # view point definition list
+
+  $#$vptdl;
 }
 
 # ----------------------------------------------------------------------------
@@ -129,8 +153,10 @@ sub find_viewptdef
   my ($v, $vptd);
   foreach $v (@$vptdl)
   {
-    if ($v->{name} eq $view) { $vptd= $v; last; }
+print "match: name=$v->{name} view=$view\n";
+    if ($v->{name} eq $view) { print "found! v=$v\n"; $vptd= $v; last; }
   }
+  print "vptd=$vptd\n";
   $vptd;
 }
 
@@ -183,33 +209,71 @@ sub get_viewpttable
     last if ($v == $no_val);
     push (@vptt, $v);
   }
+
   \@vptt;
+}
+
+# ----------------------------------------------------------------------------
+sub pack_viewpt_table
+{
+  my $tbl= shift;
+  my ($def, $t);
+  foreach $t (@$tbl)
+  {
+    $def .= pack ('v', $t);
+  }
+  $def .= pack ('v', $no_val);  # last entry
+  $def;
 }
 
 # ----------------------------------------------------------------------------
 sub find_viewpttable
 {
   my $db= shift;
-  my $view= shift;      # number of the view
+  my $view= shift;                      # number of the view
 
-  my $vpttl= $db->{viewpttable};  # view point table list
+  my $vpttl= $db->{viewpttable};        # view point table list
 
+print "find_viewpttable 1 view=$view\n";
   return undef unless ($view >= 0 && $view <= $#$vpttl);
+print "find_viewpttable 2 view=$view\n";
   my $vptt= $vpttl->[$view];
 
-  if ($#$vptt < 0)
+  $vptt= $db->refresh_viewpt ($view) if ($#$vptt < 0);
+  # &HP200LX::DB::hex_dump ($vptt);
+  $vptt;
+}
+
+# ----------------------------------------------------------------------------
+sub refresh_viewpt
+{
+  my $db= shift;
+  my $view= shift;                      # number of the view
+
+  my $vpttl= $db->{viewpttable};        # view point table list
+  my $vptdl= $db->{viewptdef};          # view point definition list
+  my ($vptd, $vptt, $view_start, $view_end);
+  my $T10= $db->{Types}->[10];
+
+  if (($view_start= $view_end= $view) == -1)
   {
-    my $vptdl= $db->{viewptdef};  # view point definition list
-    my $vptd= $vptdl->[$view];
-    
-    $vptt= $vpttl->[$view]= &refresh_viewpt ($db, $vptd);
+    $view_start= 0;
+    $view_end= $#$vptdl;
+  }
+
+  for ($view= $view_start; $view <= $view_end; $view++)
+  {
+    $vptd= $vptdl->[$view];
+    $vptt= $vpttl->[$view]= &refresh_viewpt_table ($db, $vptd);
+    print "refreshed vptt[$view]: ", $#$vptt-1, " entries\n";
+    $T10->[$view]->{data}= &pack_viewpt_table ($vptt);
   }
 
   $vptt;
 }
 
 # ----------------------------------------------------------------------------
-sub refresh_viewpt
+sub refresh_viewpt_table
 {
   my $db= shift;
   my $vptd= shift;
@@ -218,33 +282,43 @@ sub refresh_viewpt
   my @SSL= &parse_ssl_tok_str ($vptd->{tok_str});
   my $ssls= $vptd->{str_str};
   my $fd= $db->{fielddef};
-  my $sort;     # sort definition
-  my @sort;
-  my @SORT;     # names of sort fields
+  my $sort= {}; # sort definition tree
+  my @SORT;     # names of fields used for the sort
   my $T= {};    # sorted records by sort fields
 
-  my ($i, $j, $x, $y, $z, $op, $rec, $match, $SSL, @ST);
-  $rec= $sort= $vptd->{'sort'};
+  my ($i, $j, $x, $y, $z, $op, $match, $SSL, @ST);
+  my $rec= $sort= $vptd->{'sort'};
   for ($i= 0; $i < $MAX_SORT_FIELDS; $i++)
   {
     $y= $rec->[$i];
     $x= $fd->[$y->{idx}];
-    last if ($x == $no_val);
+    last if ($y->{idx} == $no_val);
     push (@SORT, $y->{name}= $x->{name});
 
     # get the sort mode handy:
     # 0= ascending string, 1= descending string,
     # 2= ascending number, 3= descending number
-    $z= ($x->{ftype} == 4) ? 1 : 0;
+    # 4= ascending time,   5= descending time
+    # T2D: sorting date and other fields, time seems to work...
+
+    my $ft= $x->{ftype};
+       if ($ft == 4) { $z= 1; }            # number
+    elsif ($ft == 7) { $z= 2; }            # time
+    else { $z= 0; }
+
     $z= $z*2+ (($y->{asc}) ? 0 : 1);
     $y->{smode}= $z;
+    print "sort mode: x=$x name=$x->{name} ft=$ft z=$z\n";
   }
 
-  print "refreshing view point; ssl_str=$ssls\n";
-
   my $cnt= $db->get_last_index ();    # total number of records
+
+  print "refreshing view point; ssl_str=$ssls num(SSL)=$#SSL dbcnt=$cnt\n";
   for ($i= 0; $i <= $cnt; $i++)
   {
+    $rec= $db->FETCH ($i);
+    # print "rec: ", join (':', keys %$rec), "\n";
+
     if ($#SSL < 0)
     {
       $match= 1;  # no SSL string thus use everything!
@@ -252,9 +326,6 @@ sub refresh_viewpt
     else
     { # SSL was defined
       $match= 0;
-      $rec= $db->FETCH ($i);
-      # print "rec: ", join (':', keys %$rec), "\n";
-
       # this is the SSL match engine, it works like a mini FORTH interpreter
       @ST= ();
       foreach $SSL (@SSL)
@@ -268,8 +339,11 @@ sub refresh_viewpt
           $op= $SSL->{op}= 0x0112;
         }
 
-           if ($op == 0x0011) { push (@ST, $SSL->{str}); }
-        elsif ($op == 0x0112) { push (@ST, $rec->{$SSL->{name}}); }
+           if ($op == 0x0001) { push (@ST, !pop (@ST)); }
+        elsif ($op == 0x0002) { push (@ST, pop (@ST) || pop (@ST)); }
+        elsif ($op == 0x0003) { push (@ST, pop (@ST) && pop (@ST)); }
+        elsif ($op == 0x0004) { push (@ST, pop (@ST) == pop (@ST)); }
+        elsif ($op == 0x0009) { push (@ST, pop (@ST) != pop (@ST)); }
         elsif ($op == 0x000B)
         {
           $x= pop (@ST);
@@ -278,21 +352,25 @@ sub refresh_viewpt
           # print "contains: $x in $y -> $z\n";
           push (@ST, $z);
         }
+        elsif ($op == 0x0011) { push (@ST, $SSL->{str}); }
+        elsif ($op == 0x0112) { push (@ST, $rec->{$SSL->{name}}); }
         elsif ($op == 0x0018)
         {
           $z= pop (@ST);
           $match= 1 if ($z);
           # print "MATCH: $match\n";
         }
+        else
+        {
+          print "unimplemented SSL op=$op\n";
+        }
       }
     }
 
     if ($match)
-    {
-      # T2D: sort new item
-      # push (@$vptt, $i);
-
+    { # sorting: build up a sort tree
       # search the array reference holding the record indices
+      # the tree looks something like this
       # $T->{$rec->{$SORT[0]}}->...->{$rec->{$SORT[n]}}= [ rec indices ]
       $x= $T; $j= 0;
       for ($j= 0; $j <= $#SORT; $j++)
@@ -305,10 +383,36 @@ sub refresh_viewpt
     }
   }
 
-  @sort= @$sort;
+  my @sort= @$sort;
   &sort_viewpt ($vptt, $T, @sort);
 
   $vptt;
+}
+
+# ----------------------------------------------------------------------------
+# compare two time strings
+sub time_cmp
+{
+  # my ($a, $b)= @_;
+  my $la= length ($a);
+  my $lb= length ($b);
+
+  # print "a=$a b=$b la=$la lb=$lb\n";
+     if ($la == $lb)    { return ($a cmp $b); }
+  elsif ($la <  $lb)    { return -1; }
+  else                  { return 1;  }
+}
+
+# ----------------------------------------------------------------------------
+# the HP-LX compares strings in lower case
+sub cmpc
+{
+  my ($la, $lb)= ($a, $b);
+  $la=~ tr/A-Z/a-z/;
+  $lb=~ tr/A-Z/a-z/;
+     if ($la eq $lb)    { return ($a cmp $b); }
+  elsif ($la lt $lb)    { return -1; }
+  else                  { return 1;  }
 }
 
 # ----------------------------------------------------------------------------
@@ -324,11 +428,14 @@ sub sort_viewpt
   elsif (ref ($T) eq 'HASH')
   {
     my $s= shift (@sort);
+    my $sm= $s->{smode};
 
-       if ($s->{smode} == 0) { @keys= sort keys %$T; }
-    elsif ($s->{smode} == 1) { @keys= reverse sort keys %$T; }
-    elsif ($s->{smode} == 2) { @keys= sort {$a <=> $b} keys %$T; }
-    elsif ($s->{smode} == 3) { @keys= sort {$b <=> $a} keys %$T; }
+       if ($sm == 0) { @keys=         sort cmpc keys %$T; }
+    elsif ($sm == 1) { @keys= reverse sort cmpc keys %$T; }
+    elsif ($sm == 2) { @keys=         sort {$a <=> $b} keys %$T; }
+    elsif ($sm == 3) { @keys=         sort {$b <=> $a} keys %$T; }
+    elsif ($sm == 4) { @keys=         sort time_cmp keys %$T; }
+    elsif ($sm == 5) { @keys= reverse sort time_cmp keys %$T; }
 
     foreach $key (@keys)
     {
@@ -341,15 +448,18 @@ sub sort_viewpt
 sub parse_ssl_tok_str
 {
   my $str= shift;
-  my @res;
 
+  # print ">>> parse_ssl_tok_str str='$str'\n"; HP200LX::DB::hex_dump ($str);
+  return () unless ($str);
+
+  my @res;
   my $i= 0;
   my ($ci, $nv);
   while (1)
   {
     $ci= unpack ('C', substr ($str, $i, 1));
 
-    if ($ci == 0x0B) # string contains
+    if ($ci >= 0x01 && $ci <= 0x0B) # string contains
     {
       $i++;
       push (@res, { op => $ci });
@@ -367,7 +477,7 @@ sub parse_ssl_tok_str
       print "str: $nv\n";
       push (@res, { op => 0x11, str => $nv });
     }
-    elsif ($ci == 0x12) # field index token
+    elsif ($ci == 0x12 || $ci == 0x13) # name or boolean token (field index token)
     {
       $nv= unpack ('v', substr ($str, $i+1, 2));
       $i += 3;
@@ -381,7 +491,7 @@ sub parse_ssl_tok_str
     }
     else
     {
-      printf (">>> unknwon SSL token [%d] 0x%02X\n", $i, $ci);
+      printf (">>> unknown SSL token [%d] 0x%02X\n", $i, $ci);
       $i++;
     }
   }

@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl
-# FILE %gg/perl/HP200LX/DBcard.pm
+# FILE DBgui/card.pm
 #
 # card view component of the HP-200LX/DB GUI
 #
@@ -7,17 +7,17 @@
 # + DEL records
 #
 # written:       1998-03-08
-# latest update: 1998-06-28 11:16:42
+# latest update: 1999-02-22 20:47:54
 #
 
-package HP200LX::DBcard;
+package HP200LX::DBgui::card;
 
 use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.03';
-@ISA= qw(Exporter);
+$VERSION = '0.06';
+@ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;
 
@@ -25,15 +25,19 @@ use Tk;
 sub new
 {
   my $class= shift;
-  my $db= shift;                # database object
+  my $DBparent= shift;          # parent object creating this card view
   my $title= shift;
   my %pars= @_;
+
+  my $db= $DBparent->{db};      # database object
+  my $AD= $db->{APT_Data};
 
   print ">>> card pars=", join (':', %pars), "\n";
   my $first= (defined ($pars{'index'})) ? $pars{'index'} : 1;
 
   my $fd= $db->{fielddef};      # description abuot data types
-  my $cd= $db->{carddef};       # description about positions etc.
+  my $cd= $AD->{carddef} || $db->{carddef}; # description about positions etc.
+  print ">>> AD=", $AD->{carddef}, " db=", $db->{carddef}, "\n";
   my $cpd= $db->{cardpagedef};
   my ($ce, $fe);                # single items
   my ($i, %fields, $top);
@@ -46,9 +50,6 @@ sub new
     $top->title ($title);
   }
 
-  my $key_pad= $top->Frame (relief => 'fenced');
-  $key_pad->pack (side => 'bottom', fill => 'x');
-
   my $DBgui=
   {
     top => $top,                        # Tk window
@@ -57,33 +58,43 @@ sub new
     num => $db->get_last_index ()+1,    # total number of records
     disp => -1,                         # number of displayed record
     disp_rec => undef,                  # currently displayed record
+    visibility => 'mapped',             # card is icon/widget/withdrawn
+    FramePos => {},                     # horizontal frames by y-coord
   };
   bless $DBgui, $class;
 
   # record bar
-  $key_pad->Label (text => 'Record')->pack (side => 'left');
-  $key_pad->Button (text => '<<', command => sub { $DBgui->show_record (-1, 1); } )->pack (side => 'left');
-  my $ed= $key_pad->Entry (textvariable => \$DBgui->{disp}, width => 4)->pack (side => 'left');
-  $ed->bind ('<Return>', sub { $DBgui->show_record (0, 1); });
-  $key_pad->Button (text => '>>', command => sub { $DBgui->show_record (1, 1); } )->pack (side => 'left');
-  $key_pad->Label (text => 'of')->pack (side => 'left');
-  $key_pad->Entry (textvariable => \$DBgui->{num}, width => 4, relief => 'flat')->pack (side => 'left');
-  $key_pad->Button (text => 'ADD', command => sub { $DBgui->add_record (); } )->pack (side => 'left');
+  &HP200LX::DBgui::create_record_bar ($top, $DBgui, $DBparent);
 
-  for ($i= 0; $i <= $#$cd; $i++)
+  # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  # T2D:
+  # + this loop *roughly* matches the layout of a DB card.
+  my @i;
+  if (exists ($AD->{field_sequence})) { @i= @{$AD->{field_sequence}}; }
+  else { @i = (0 .. $#$cd); }
+
+  my $debug= $db->{'__DEBUG__'} & 0x01;
+  if ($debug) { print "<tr><th>idx<th>name<th>type<th>x<th>y<th>w<th>h<th>Lsize\n"; }
+
+  foreach $i (@i)
   {
     $ce= $cd->[$i];     # card definition
     $fe= $fd->[$i];     # field definition
     my $ty= $fe->{Ftype};
-    my $field;
     my $name= $fe->{name};
+    # $name= '&field'. $i unless ($name);
 
-    next if ($ty eq 'LIST'); # don't display LIST type entries
+    if ($ty eq 'LIST')
+    { # don't display LIST type entries
+      if ($debug) { print "<tr><td>.<td>$name<td>LIST<td>...\n"; }
+      next;
+    }
 
-    $fields{$name}= { Ftype=> $ty, val => '', };
-    $fields{$name}->{el}=
-      &make_field ($top, \$fields{$name}->{val}, $name, $ty,
-                   $ce->{'x'}, $ce->{y}, $ce->{w}, $ce->{h}, $ce->{Lsize});
+    $fields{$name}= { 'Ftype' => $ty, 'val' => '' };
+    $fields{$name}->{'el'}=
+      &make_field ($top, \$fields{$name}->{'val'}, $name, $ty,
+                   $ce->{'x'}, $ce->{'y'}, $ce->{'w'}, $ce->{'h'},
+                   $ce->{'Lsize'}, $debug);
   }
 
   $DBgui->show_record ($first, 0);
@@ -95,26 +106,38 @@ sub make_field
 {
   my $top= shift;
   my $tv= shift;                # ref to scalar text variable
-  my ($name, $type, $x, $y, $w, $h, $Lsize)= @_;
+  my ($name, $type, $x, $y, $w, $h, $Lsize, $debug)= @_;
+
+  # print " { 'name' => '$name', 'type' => '$type',",
+  #       " 'x' => $x, 'y' => $y, 'w' => $w, 'h' => $h,",
+  #       " 'Lsize' => $Lsize },\n";
+
+  if ($debug)
+  {
+    print "<tr><td>.<td>$name<td>$type<td>$x<td>$y<td>$w<td>$h<td>$Lsize\n";
+  }
 
   my $Lw= $w/8;
   my $frame;
 
   if ($top->{Last_y} == $y)
+  # if (exists ($top->{FramePos}->{$y}))
   {
     $frame= $top->{FramePos}->{$y};
+    # print "re-use frame at y=$y\n";
   }
   else
   {
     $frame= $top->Frame ();
     $top->{FramePos}->{$y}= $frame;
     $top->{Last_y}= $y;                 # T2D: used for Multiple Pages
+    # print "create frame at y=$y name=$name\n";
   }
 
   # $L= $frame->Label (text => $name);
   my ($E, $L, %pack);
   my %packf= (fill => 'x');     # packing of the enclosing frame
-  if ($type eq 'WORDBOOL')
+  if ($type eq 'WORDBOOL' || $type eq 'RADIO_BUTTON')
   {
     $E= $frame->Checkbutton (text => $name, variable => $tv);
   }
@@ -126,11 +149,21 @@ sub make_field
                           scrollbars => 'e');
     %pack= %packf= (fill => 'both', expand => 1);
   }
+  elsif ($type eq 'GROUP')
+  {
+    $L= $frame->Label (text => $name);
+  }
+  elsif ($type eq 'COMBO')
+  {
+    $E= $frame->Entry (width => $Lw, textvariable => $tv);
+    print "combo field: y=$y\n";
+    %pack= (fill => 'x', expand => 1);
+  }
   else
   {
     $L= $frame->Label (text => $name);
     $E= $frame->Entry (width => $Lw, textvariable => $tv);
-    # %pack= (fill => 'x', expand => 1);
+    %pack= (fill => 'x', expand => 1);
   }
   
   if ($L)
@@ -138,8 +171,11 @@ sub make_field
     $frame->{L}= $L;
     $L->pack (side => 'left');
   }
-  $frame->{E}= $E;
-  $E->pack (side => 'left', %pack);
+  if ($E)
+  {
+    $frame->{E}= $E;
+    $E->pack (side => 'left', %pack);
+  }
 
   $frame->pack (%packf);
 
@@ -202,6 +238,14 @@ sub show_record
     }
     else { $F->{val}= $v; }
   }
+
+  if ($widget->{visibility} ne 'mapped')
+  {
+    my $top= $widget->{top};
+    $top->raise ();
+    $top->deiconify ();
+    $widget->{visibility}= 'mapped';
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -246,3 +290,6 @@ sub update_record
 
   $db->STORE ($disp-1, $rec);
 }
+
+1;
+

@@ -1,11 +1,13 @@
 #
 # FILE %gg/perl/HP200LX/DB.pm
 #
-# access HP-200 LX database files
+# access HP 200LX database files
 # See POD Section for a few more details
 #
+# work area: decode_type14
+#
 # written:       1997-12-28 (c) g.gonter@ieee.org
-# latest update: 1998-06-28 11:56:41
+# latest update: 1999-02-22 20:46:39
 #
 
 package HP200LX::DB;
@@ -14,11 +16,11 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT_OK);
 use Exporter;
 
-$VERSION = '0.03';
+$VERSION = '0.06';
 @ISA = qw(Exporter);
 @EXPORT_OK= qw(openDB saveDB);
 
-use HP200LX::DBvpt;     # view point management, including vpt definition
+use HP200LX::DB::vpt;     # view point management, including vpt definition
 
 # ----------------------------------------------------------------------------
 my $no_note= 65535;             # note number if there is no note
@@ -45,10 +47,12 @@ my @REC_TYPE=           # HP's internal record type definitions
   'NOTE',               # 9
   'VIEWPTTABLE',        # 10 table of viewpoint entries
   'DATA',               # 11
-  'LINKDEF',            # 12
+  'LINKDEF',            # 12: usually smart clips
   'CARDPAGEDEF',        # 13
-  '',                   # 14 APP
+  '',                   # 14 APP:
+                        #    + ADB: appt_info
   'SMART_CLIP',         # 15 APP: smart clip def in appt.adb (GG)
+                        #    + ADB: appt_list (adbio)
   '',                   # 16 APP
   '',                   # 17 APP
   '',                   # 18 APP
@@ -67,6 +71,7 @@ my @REC_TYPE=           # HP's internal record type definitions
   'LOOKUPTABLE'         # 31
 # 14..30 application specific!
 );
+sub REC_TYPE { my $num= shift; $REC_TYPE[$num] || "USER_TYPE_$num"; }
 
 # ----------------------------------------------------------------------------
 my @FIELD_TYPE=            # HP's internal field type definitions
@@ -87,26 +92,25 @@ my @FIELD_TYPE=            # HP's internal field type definitions
   { 'Desc' => 'MULTILINE',    'Size' => 0, },      # 13 ??
   { 'Desc' => 'LIST',         'Size' => 0, },      # 14
   { 'Desc' => 'COMBO',        'Size' => 0, },      # 15
-  { 'Desc' => 'U16',          'Size' => 0, },      # 16
+  { 'Desc' => 'U16',          'Size' => 0, },      # 16: WDB time zone difference
   { 'Desc' => 'U17',          'Size' => 0, },      # 17
-  { 'Desc' => 'U18',          'Size' => 0, },      # 18
-  { 'Desc' => 'U19',          'Size' => 0, },      # 19
-  { 'Desc' => 'U20',          'Size' => 0, },      # 20
+  { 'Desc' => 'U18',          'Size' => 1, },      # 18: ADB "Repeat Status"
+  { 'Desc' => 'U19',          'Size' => 3, },      # 19: ADB "Start Date"
+  { 'Desc' => 'U20',          'Size' => 2, },      # 20: ADB "Due Date"
   { 'Desc' => 'U21',          'Size' => 0, },      # 21
-  { 'Desc' => 'U22',          'Size' => 0, },      # 22
-  { 'Desc' => 'U23',          'Size' => 0, },      # 23:
-  { 'Desc' => 'U24',          'Size' => 0, },      # 24
+  { 'Desc' => 'U22',          'Size' => 2, },      # 22: ADB "Priority"
+  { 'Desc' => 'U23',          'Size' => 2, },      # 23: ADB "#consecutive days"
+  { 'Desc' => 'U24',          'Size' => 2, },      # 24: ADB "Leadtime"
   { 'Desc' => 'U25',          'Size' => 0, },      # 25
 );
 
 # ----------------------------------------------------------------------------
 my @PRE_CODE=
-(
+( # so called secret key... (checked againsthpcrack.c)
   0xE1, 0xA8, 0xF7, 0x14, 0x0B, 0xC5, 0x49, 0x42,       # 0x00
   0xAC, 0x73, 0xFA, 0xA9, 0x78, 0xDD, 0x48, 0x6D,       # 0x08
-  0x71,
 # The rest is pure guesswork ... (1998-01-03 12:10:50)
-        0x33, 0x50, 0x8E, 0xDD, 0x9C, 0x83, 0x5B,       # 0x10
+  0x71, 0x33, 0x50, 0x8E, 0xDD, 0x9C, 0x83, 0x5B,       # 0x10
   0xAD, 0xDF, 0x28, 0xBA, 0xC0, 0xC8, 0xA5, 0xF3,       # 0x18
   0x26, 0xA5, 0xE1, 0xE7, 0x2F, 0x1C, 0x2C, 0xD7,       # 0x20
   0x0A, 0xA3, 0x9C, 0x34, 0xCC, 0x59, 0xF2, 0x7F,       # 0x28
@@ -116,6 +120,11 @@ my @PRE_CODE=
   0xC0, 0x3C, 0x6C, 0xDA, 0xDF, 0x06, 0x41, 0xDE,       # 0x48
   0xC2, 0x40, 0xCD, 0xAC, 0x9C, 0x56, 0xCF, 0x6A,       # 0x50
   0x3E, 0xD7, 0xE3, 0x08
+);
+my @PRE_PADDING=
+( # padding data used to strip away the remainder of the password
+  0xFF, 0x13, 0x72, 0x4F, 0x7F, 0x22, 0x40, 0x37,       # 0x00
+  0x7E, 0x18, 0x65, 0x2D, 0x55, 0x47, 0x77, 0x68,       # 0x08
 );
 
 # ----------------------------------------------------------------------------
@@ -131,6 +140,7 @@ sub new
   my $fnm= shift;
   my $apt= shift || &derive_apt ($fnm);
 
+  # print ">>> NEW: fnm='$fnm' apt='$apt'\n";
   my $i;
   my $Types= [];
   my @t= localtime (time);
@@ -140,11 +150,13 @@ sub new
   my $obj=
   {
     'Filename'  => $fnm,
+
     'APT'       => $apt,                # application type
                                         # GDB: generic database (default)
                                         # NDB: note taker (NDB == GDB)
                                         # ADB: appointment book
                                         # WDB: world time
+    'APT_Data'  => {},                  # application specific extension data
 
     'Header'    =>
     {
@@ -166,10 +178,10 @@ sub new
       },
 
       # guessed data from other examples
-      'file_status' => 0,
-      'file_type' => 68,
+      'file_status'     => 0,
+      'file_type'       => 68,
       'release_version' => 258,
-      'viewpt_hash' => 34085,
+      'viewpt_hash'     => 34085,
     },
 
     'Types' => $Types,          # DB records of each type
@@ -206,15 +218,17 @@ sub openDB
   my $fnm= shift;
   my $APT= shift;
   my $obj= new ($fnm, $APT);
+  $APT= $obj->{APT};  # use application detection logic in new
   my $b;
   my $sig;
   local (*FI);
 
   unless (open (FI, $fnm))
   {
-    print "ERROR: could not open DB file not!\n";
+    print "ERROR: could not open DB file '$fnm'!\n";
     return undef;
   }
+  binmode (FI); # MS-DOS systems need this, T2D: how about Mac?
 
   read (FI, $sig, 4);
 
@@ -261,7 +275,7 @@ sub openDB
 
   seek (FI, $lookup_table_offset, 0);
   my $xrec= &get_recheader (*FI);
-  # &print_recheader ("lookup table:", $xrec);
+  # &print_recheader (*STDOUT, "lookup table:", $xrec);
   $lng= $xrec->{'length'}-6;
   $i= read (FI, $b, $lng);
 
@@ -340,16 +354,27 @@ sub openDB
     if ($type < 0 || $type >= 32)
     {
       print "WARNING: unknown type: $type; IGNORED\n";
-      &print_recheader ("record [$i]:", $xrec);
+      &print_recheader (*STDOUT, "record [$i]:", $xrec);
       next;
     }
 
     # the real record data!
     read (FI, $b, $siz);
 
-    $b= &decode ($b, $siz, $obj->{CODE}, 0)
-      if ($type > 1 && $obj->{Meta} eq 'Encrypted');
-      # NOTE: currently only decrypts the first 17 byte correctly!
+    if ($type > 1 && $obj->{Meta} eq 'Encrypted')
+    { # NOTE: currently only decrypts parts of the data correctly!
+      my $kk;
+      print '-'x72, "\nencoded [type=$type, $REC_TYPE[$type]]\n";
+      # print "session key=";
+      # foreach $kk (@{$obj->{CODE}}) { printf (" 0x%02X", $kk); }
+      # print "\n";
+      # &hex_dump ($b);
+
+      $b= &decode ($b, $siz, $obj->{CODE}, 0);
+
+      print "decoded\n";
+      &hex_dump ($b);
+    }
 
     $xrec->{data}= $b;
 
@@ -362,28 +387,38 @@ sub openDB
     { # password record
       $obj->{Meta}= 'Encrypted';
 
-      # setup session key (works only for the first 17 bytes!
-      @{$obj->{CODE}}= split (/|/, $b);
-      my $kk;
-      foreach $kk (@{$obj->{CODE}}) { $kk= unpack ('C', $kk); }
+      # decode and print the password
+      my $pass= &decode_password ($b, $siz);
+      $obj->{Password}= $pass;
 
-      if (open (FK, 'key.bin'))
+      # setup session key (works only for the first 17 bytes!
+      my @SESSION_KEY= split (/|/, substr ($b, 0, length ($pass)));
+      my $kk;
+      foreach $kk (@SESSION_KEY) { $kk= unpack ('C', $kk); }
+      # push (@SESSION_KEY, @PRE_PADDING[length($pass)..15]);
+      print "session key length: $#SESSION_KEY\n";
+      $obj->{CODE}= \@SESSION_KEY;
+
+      if (1 && open (FK, 'key.bin'))
       {
+        binmode (FK);    # MS-DOS systems need this, how about the Mac?
+
         my $key;
         my $key_size= 512; # up to 21400 byte
         read (FK, $key, $key_size);
         close (FK);
-        for ($kk= $siz; $kk < $key_size ; $kk++)
+        for ($kk= length($pass); $kk < $key_size ; $kk++)
         { $obj->{CODE}[$kk]= unpack ('C', substr ($key, $kk, 1)); }
+        for ($kk= 17; $kk < $key_size; $kk += 17)
+        {
+          $obj->{CODE}[$kk+0] ^= 0x4A;  # p^78
+          $obj->{CODE}[$kk+1] ^= 0x27;  #  ^13
+          $obj->{CODE}[$kk+2] ^= 0x40;  #  ^72
+          $obj->{CODE}[$kk+3] ^= 0x7E;  #  ^4f
+          $obj->{CODE}[$kk+4] ^= 0x4B;  #  ^7f
+        }
       }
 
-      # decode and print the password
-      my $pass= &decode ($b, $siz, \@PRE_CODE, 1);
-
-      print "database is encrypted\npassword record, encrypted\n";
-      &hex_dump ($b);
-      print "password record, decryption attempted\n";
-      &hex_dump ($pass);
     } # type == 1, password
 
     elsif ($type == 4) # CARDDEF
@@ -400,12 +435,14 @@ sub openDB
 
     elsif ($type == 7) # VIEWPTDEF
     {
-      push (@{$obj->{viewptdef}}, &get_viewptdef ($b));
+      my $vptd= &get_viewptdef ($b);
+      push (@{$obj->{viewptdef}}, $vptd);
+      $vptd->{index}= $#{$obj->{viewptdef}};
     }
 
     elsif ($type == 9) # NOTE
     { # note records may be missing, but they are accessed according
-      # to their index, thus leave the blank entries int the table.
+      # to their index, thus leave the blank entries in the table.
       $obj->{Types}->[9]->[$xrec->{idx}]= $xrec;
       next;
     }
@@ -421,11 +458,19 @@ sub openDB
     }
 
     unless ($REC_TYPE[$type])
-    { # dump info about other unknown field types
-      print "[$i] off=$off siz=$siz type=$type\n";
-      &print_recheader ("record [$i]:", $xrec);
-      # print "b='$b'\n";
-      &hex_dump ($b);
+    { # application specific data
+      if ($type == 14 && $APT eq 'ADB')
+      {
+        $obj->decode_type14 (*STDOUT, $b);
+      }
+      else
+      { # dump info about other unknown field types
+        print "[$i] off=$off siz=$siz type=$type APT='$APT'\n";
+        &print_recheader (*STDOUT, "record [$i]:", $xrec);
+
+        # print "b='$b'\n";
+        &hex_dump ($b);
+      }
     }
 
     push (@{$obj->{Types}->[$type]}, $xrec);
@@ -458,7 +503,7 @@ sub saveDB
 
   # calculate lookup table and firsttype table
   # . for each record type: calculate size of each entry
-  print "lut_size= $#lut $lut\n";
+  # print "lut_size= $#lut $lut\n";
   for ($type= 0; $type < 32; $type++)
   {
     push (@ftype, $lut);
@@ -468,7 +513,7 @@ sub saveDB
     {
       $rec= $Data->[$idx];
 
-      print ">>> save: type=$type idx=$idx\n";
+      # print ">>> save: type=$type idx=$idx\n";
 
       # T2D, TEST: note records may be blank!!
       if (defined ($rec))
@@ -507,13 +552,14 @@ sub saveDB
     }
   }
 
-  print "lut_size= $#lut $lut num_recs=$num_recs off=$off\n";
+  # print "lut_size= $#lut $lut num_recs=$num_recs off=$off\n";
 
   $hdr->{lookup_table_offset}= $off;
   $hdr->{num_recs}= $num_recs;
 
   local (*FO);
   open (FO, ">$fnmo") || die;
+  binmode (FI); # MS-DOS systems need this, T2D: how about Mac?
 
   # save record header
   print FO $hdr->{sig};
@@ -540,13 +586,13 @@ sub saveDB
       $rec= $Data->[$idx];
 
       next unless (defined ($rec->{data})); # empty records
-      print ">>> save data records type=$type idx=$idx\n";
+      # print ">>> save data records type=$type idx=$idx\n";
       &put_recheader (*FO, $rec);
       print FO $rec->{data};
     }
   }
 
-  print "lut_size= $#lut $lut\n";
+  # print "lut_size= $#lut $lut\n";
 
   # save lookup table
   $rec=
@@ -583,9 +629,20 @@ sub saveDB
 }
 
 # ----------------------------------------------------------------------------
+sub get_field_def
+{
+  my $self= shift;
+  my $num= shift;
+
+  $self->{fielddef}->[$num];
+}
+
+# ----------------------------------------------------------------------------
 sub show_db_def
 {
   my $self= shift;
+  local (*FO)= shift;
+
   my $Fdef= $self->{fielddef};
   my $field;
   my $num= 0;
@@ -594,49 +651,57 @@ sub show_db_def
 
   my $hdr= sprintf ("[##] ## %-12s Siz %-24s FID  Off  Res  Flg\n",
                     "Type", "Name");
-  print $delim, "\n";
-  print "DB def by field number\n", $hdr;
+  print FO $delim, "\n";
+  print FO "DB def by field number\n", $hdr;
 
   foreach $field (@$Fdef)
   {
-    $off= &show_field_def ($field, $num++);
+    $off= &show_field_def (*FO, $field, $num++);
     push (@{$off{$off}}, $field);
   }
 
   $num= 0;
-  print $delim, "\n";
-  print "DB def by offset position\n", $hdr;
+  print FO $delim, "\n", "DB def by offset position\n", $hdr;
   foreach $off (sort keys %off)
   {
     foreach $field (@{$off{$off}})
     {
-      &show_field_def ($field, $num);
+      &show_field_def (*FO, $field, $num);
     }
     $num++
   }
 
-  print $delim, "\n";
+  print FO $delim, "\n";
 }
 
 # ----------------------------------------------------------------------------
 sub show_card_def
 {
   my $self= shift;
-  my $Cdef= $self->{carddef};
-  my $field;
+  local (*FO)= shift;
 
-  print "card definition:\n";
+  my $Cdef= $self->{carddef};
+  return if ($#$Cdef < 0);
+  my ($field, $f);
+
+  print FO "card definition:\n";
   foreach $field (@$Cdef)
   {
     # &show_field_window ($field);
-    print "field: ", join (':', %$field), "\n";
+    print FO "field:";
+    foreach $f (sort keys %$field)
+    {
+      print " $f=$field->{$f},";
+    }
+    print "\n";
   }
 }
 
 # ----------------------------------------------------------------------------
-sub show_data
+sub dump_data
 {
   my $self= shift;
+
   my $APT= $self->{APT};
   my $T= $self->{Types} || die;
   my $D= $T->[11];  # array of data records
@@ -655,7 +720,7 @@ sub show_data
     my $b= $d->{data} || next;
 
     my ($ok, $o)= &fetch_data ($b, $Fdef, $N, $APT);
-    &xx_show_data ($b, $ok, $o);
+    &dump_data_record ($b, $ok, $o);
   }
 }
 
@@ -666,12 +731,25 @@ sub TIEARRAY
 }
 
 # ----------------------------------------------------------------------------
+sub FETCH_raw
+{
+  my $db= shift;
+  my $idx= shift;
+
+  my $T= $db->{Types} || return undef;
+  my $D= $T->[11];      # array of data records
+  return undef if ($idx > $#$D);
+
+  $D->[$idx]->{data};   # data record for the given index
+}
+
+# ----------------------------------------------------------------------------
 sub FETCH
 {
   my $db= shift;
   my $idx= shift;
 
-  my $T= $db->{Types} || die;
+  my $T= $db->{Types} || die 'not a database';
   my $D= $T->[11];      # array of data records
   return undef if ($idx > $#$D);
 
@@ -687,7 +765,7 @@ sub FETCH
 
     # print "FETCH: T=$T D=$D N=$N F=$F b=$b\n";
     my ($ok, $o)= &fetch_data ($b, $F, $N, $APT);
-    # &xx_show_data ($b, $ok, $o);
+    # &dump_data_record ($b, $ok, $o);
 
     $Dx->{obj}= $rv= $o;
     $Dx->{ok}= $ok;
@@ -729,13 +807,13 @@ sub STORE
   $D->[$idx]= $Dx;
 
   # T2D: unfinished
+  # missing items: refreshing and/or invalidating view points
 }
 
 # ----------------------------------------------------------------------------
 sub get_last_index
 {
   my $db= shift;
-  my $idx= shift;
 
   my $T= $db->{Types} || die;
   my $D= $T->[11];      # array of data records
@@ -755,6 +833,30 @@ sub get_str
 }
 
 # ----------------------------------------------------------------------------
+sub fmt_date
+{
+  my $str= shift;
+
+  my ($year, $mon, $day)= unpack ('CCC', $str);
+  ($year == $no_year && $mon == $no_mon && $day == $no_day)
+  ? '' # empty date field
+  : sprintf ("%d-%02d-%02d", 1900 + $year, $mon+1, $day+1);
+}
+
+# ----------------------------------------------------------------------------
+sub fmt_time
+{
+  my $str= shift;
+
+  my $val= unpack ('v', $str);
+  return '' if ($val == $no_time || $val == $no_val);
+
+  my $min= $val % 60;
+  my $xval= int ($val / 60);
+  sprintf ("%d:%02d", $xval, $min);
+}
+
+# ----------------------------------------------------------------------------
 sub fetch_data
 {
   my $b=        shift;  # raw binary data
@@ -767,27 +869,34 @@ sub fetch_data
   my %RB;     # radio button at offset
   my $field;
 
-  FIELD: foreach $field (@$Fdef)
+  my @Fdef= @$Fdef;     # Field Definition List
+  my $APT2;
+
+  if ($APT eq 'ADB')
+  { # For appointment book entries we have to analyze if
+    # the record describes a to-do item or a date or event
+
+    my $val= unpack ('C', substr ($b, 0x0E, 1));
+    my @TLT= ();
+
+    #  if ($val & 0x02) { $APT2= 'Done'; } # checked to-do entry
+       if ($val & 0x10) { $APT2= 'To-Do'; @TLT= (0, 1, 8..12); }
+    elsif ($val & 0x20) { $APT2= 'Event'; @TLT= (0..7, 12, 14, 15); }
+    elsif ($val & 0x80) { $APT2= 'Date';  @TLT= (0..7, 12, 14, 15); }
+
+    $o{'type'}= $APT2;
+    $o{'repeat'}= unpack ('C', substr ($b, 0x1A, 1));
+
+    @Fdef= map { $Fdef[$_] } @TLT;
+  }
+
+  FIELD: foreach $field (@Fdef)
   {
     my $type= $field->{ftype};
     my $off=  $field->{off};
     my $name= $field->{name};
     my $res;
-
-    my $APT2;
-
-    if ($APT eq 'ADB')
-    { # for appointment book entries we have to analyze if
-      # the record describes a to-do item or a date or event
-      my $val= unpack ('C', substr ($b, 0x0E, 1));
-
-      #  if ($val & 0x02) { $APT2= 'Done'; } # checked to-do entry
-         if ($val & 0x10) { $APT2= 'To-Do'; }
-      elsif ($val & 0x20) { $APT2= 'Event'; }
-      elsif ($val & 0x80) { $APT2= 'Date'; }
-
-      $o{type}= $APT2;
-    }
+    # printf ("APT= 0x%02X %2d '%s'\n", $off, $type, $name);
 
       if ($type == 0) # BYTE_BOOL
       {
@@ -816,28 +925,14 @@ sub fetch_data
              || ($type == 24 && $APT eq 'ADB') # Vorlauf
             )
       {
-        next if ($APT eq 'ADB' && $APT2 eq 'To-Do');
-
-        my $val= unpack ('v', substr ($b, $off, 2));
-        if ($val == $no_time)
-        {
-          $res= '';
-        }
-        else
-        {
-          my $min= $val % 60;
-          my $xval= int ($val / 60);
-          $res= sprintf ("%d:%02d", $xval, $min);
-        }
+        #??? next if ($APT eq 'APT' && $APT2 eq 'To-Do'); # overlapping fields
+        $res= &fmt_time (substr ($b, $off, 2));
       }
       elsif ($type == 8 # DATE
              || ($type == 19 && $APT eq 'ADB') # Beginndatum
             )
       {
-        my ($year, $mon, $day)= unpack ('CCC', substr ($b, $off, 3));
-        $res= ($year == $no_year && $mon == $no_mon && $day == $no_day)
-             ? '' # empty date field
-             : sprintf ("%d-%02d-%02d", 1900 + $year, $mon+1, $day+1);
+        $res= &fmt_date (substr ($b, $off, 3));
       }
       elsif ($type == 9) # RADIO_BUTTON
       {
@@ -882,7 +977,7 @@ sub fetch_data
       }
       elsif ($APT eq 'ADB' && $type == 22)
       {
-        print "\n", $delim, "\n>>> U22: APT2='$APT2'\n";
+        # print "\n", $delim, "\n>>> U22: APT2='$APT2'\n";
         next unless ($APT2 eq 'To-Do'); # priority code
         $res= substr ($b, $off, 2);
         $res=~ s/\x00//g;
@@ -890,7 +985,7 @@ sub fetch_data
       else
       {
         $res= "unknown type $type";
-        &show_field_def ($field, -1);
+        &show_field_def (*STDOUT, $field, -1);
         $ok= 0;
       }
 
@@ -904,7 +999,7 @@ sub fetch_data
 # ----------------------------------------------------------------------------
 sub store_data
 {
-  my $data= shift;      # record data
+  my $data= shift;      # record data to be stored into the database
   my $Fdef= shift;      # Field Definitions
   my $N= shift;         # Notes Data; array of references
   my $APT= shift;       # application type
@@ -928,7 +1023,8 @@ sub store_data
     my $type= $field->{ftype};
     my $off=  $field->{off};
     my $name= $field->{name};
-    my $val=  $data->{$name};
+    my $ex=   (exists ($data->{$name})) ? 1 : 0;        # data value present?
+    my $val=  $data->{$name};                           # actual value
     my $APT2;
 
     $APT2= $data->{type} if ($APT eq 'ADB');
@@ -975,15 +1071,15 @@ sub store_data
         $h= $val;
         ($h, $m)= ($1, $2) if ($val =~ /(\d+):(\d+)/);
         $t= $h*60+$m;
-        $t= $no_time if ($t < 0 || $t > $no_time);
-        $b [$off]= pack ('v', $h*60 + $m);
+        $t= $no_time if (!$ex || $t < 0 || $t > $no_time);
+        $b [$off]= pack ('v', $t);
       }
       elsif ($type == 8)        # DATE
       {
         my ($year, $mon, $day);
 
         $year= $mon= $day= $no_date;
-        if ($val =~ /(\d+)-(\d+)-(\d+)/)
+        if ($ex && $val =~ /(\d+)-(\d+)-(\d+)/)
         {
           ($year, $mon, $day)= ($1, $2, $3);
           # check for valid dates otherwise set no_date value
@@ -1042,6 +1138,7 @@ sub store_data
         $b [$off]= pack ('v', $note_nr);
       }
       elsif ($type == 11        # GROUP
+             || $type == 12     # STATIC
              || $type == 14     # LIST
              || $type == 15     # COMBO
             ) # no action ?!?!?
@@ -1051,7 +1148,7 @@ sub store_data
       else
       {
         print "store_data: ERROR! unknown type $type\n";
-        &show_field_def ($field, -1);
+        &show_field_def (*STDOUT, $field, -1);
         print "value: $val\n";
         $ok= 0;
       }
@@ -1214,33 +1311,83 @@ sub get_cardpagedef
 # ----------------------------------------------------------------------------
 sub show_field_def
 {
+  local *FO= shift;
   my $fdef= shift;
   my $num= shift;
 
   my $type= $fdef->{'ftype'};
   my $ftype= $FIELD_TYPE[$type];
   my $ttype= $ftype->{Desc} || "USER$type";
-  my $x_siz= $ftype->{Size} || '???';
+  my $x_siz= $ftype->{Size};
   my $x_off= sprintf ('0x%02X', $fdef->{off});
   my $x_flg= sprintf ('0x%02X', $fdef->{flg});
   my $x_name= $fdef->{name};
   $x_name=~ s/[\x80-\xFF]/?/g;
 
-  printf "[%02d] %2d %-12s %3s %-24s %3d %s 0x%02X %s\n",
-          $num, $type, $ttype, $x_siz, "'$x_name'",
-          $fdef->{fid}, $x_off, $fdef->{res}, $x_flg;
+  printf FO "[%02d] %2d %-12s %3s %-24s %3d %s 0x%02X %s\n",
+            $num, $type, $ttype, $x_siz, "'$x_name'",
+            $fdef->{fid}, $x_off, $fdef->{res}, $x_flg;
 
-  # print "[$num] type= $ttype ($type) name='$fdef->{name}' id=$fdef->{fid}",
-  #       " off=$x_off res=$fdef->{res} flg=$x_flg\n";
+  #print FO "<tr><td align=right>$num<td align=middle>&nbsp;<td align=middle>",
+  #         "&nbsp;<td align=right>$type<td>$ttype<td align=right>$x_siz",
+  #         "<td align=right>$fdef->{fid}<td align=right>$x_off",
+  #         "<td align=right>$fdef->{res}<td align=right>$x_flg",
+  #         "<td>'$x_name'\n";
+  # print FO "<td>'$x_name'\n";
+  # print FO "[$num] type= $ttype ($type) name='$fdef->{name}'"
+  #          " id=$fdef->{fid} off=$x_off res=$fdef->{res} flg=$x_flg\n";
 
   $x_off;
 }
 
 # ----------------------------------------------------------------------------
+sub decode_type14          # analyze application specific field type 14
+{
+  my $obj= shift;
+  local *FO= shift;
+  my $b= shift;
+
+  my $AD= $obj->{APT_Data};
+  my $lng= length ($b);
+
+  my ($off, $d, $v);
+  if (defined ($AD->{View_Table}))
+  {
+    print <<EOX;
+Warning: type 14 in data base appears more than twice.
+Please send a sample of your database to the author
+    &hex_dump ($b);
+EOX
+  }
+  elsif (defined ($AD->{Header}))
+  {
+    my @View_Table;
+    for ($off= 0; $off+5 <= $lng; $off += 5)
+    {
+      $d= &fmt_date (substr ($b, $off, 3));
+      $v= unpack ('v', substr ($b, $off+3, 2));
+      last if ($v eq $no_val);  # end marker
+      push (@View_Table, { 'date' => $d, num => $v } );
+      # print FO "    date=$d num=$v\n";
+    }
+    $AD->{View_Table}= \@View_Table;
+    # &hex_dump ($b);
+  }
+  else
+  {
+    $d= &fmt_date (substr ($b, 0, 3));
+    $AD->{Head_Date}= $d;
+    $AD->{Header}= $b;
+  }
+}
+
+# ----------------------------------------------------------------------------
 sub print_recheader
 {
+  local *FH= shift;
   my $txt= shift;
   my $r= shift;
+
   my @extra= @_;
   my $fld;
   my $type= $r->{'type'};
@@ -1259,7 +1406,9 @@ sub print_recheader
 sub dump_def
 {
   my $self= shift;
+  local (*FO)= shift;
   my $level= shift;
+
   my $hdr= $self->{Header};
   my $Time= &fmt_time_stamp ($hdr->{'time'});
 
@@ -1267,7 +1416,7 @@ sub dump_def
   my $sig= substr ($hdr->{sig}, 0, 3);
   my $x_ltable= sprintf ("0x%08lX", $hdr->{lookup_table_offset});
 
-  print <<EOX;
+  print FO <<EOX;
 Filename: $self->{Filename}
 Meta: $self->{Meta}
 DB Header:
@@ -1278,57 +1427,85 @@ EOX
 
   foreach $fld (sort keys %$hdr)
   {
-    print "  $fld= $hdr->{$fld}\n" unless (defined ($XHDR{$fld}));
+    print FO "  $fld= $hdr->{$fld}\n" unless (defined ($XHDR{$fld}));
   }
 
-  &print_recheader ('record header:', $hdr->{recheader});
-  # print 'self:: ', join (',', sort keys %$self), "\n";
+  &print_recheader (*FO, 'record header:', $hdr->{recheader});
+  # print FO 'self:: ', join (',', sort keys %$self), "\n";
 
   $level= 0 if ($self->{Meta} eq 'Encrypted' && $level < 10);
 
   if ($level > 0)
   {
-    &show_db_def ($self);
-    # &show_card_def ($self);
+    $self->show_db_def (*FO);
+    # $self-> show_card_def (*FO);
   }
 
   if ($level > 1)
   {
-    print $delim, "\n\n";
+    print FO $delim, "\n\n";
     for ($fld= 0; $fld < 32; $fld++)
     {
-      &dump_data ($self, $fld);
+      $self->dump_db (*FO, $fld);
     }
   }
 }
 
 # ----------------------------------------------------------------------------
-sub dump_data
+sub dump_db
 {
   my $self= shift;
+  local (*FO)= shift;
   my $type= shift;
+  my $idx= shift;
+
   my $Types= $self->{Types};
   my $Data= $Types->[$type];
   my ($el, $i);
 
+  if (defined ($idx))
+  {
+    $el= $Data->[$idx];
+    &dump_db_rec (*FO, $idx, $el);
+    return;
+  }
+
+  $idx= 0;
   foreach $el (@$Data)
   {
-    $i++;
-    &print_recheader ("data record [$i]", $el, 'filters', 'flags');
-    print "data=\n";
-    &hex_dump ($el->{data});
-    print $delim, "\n\n";
+    &dump_db_rec (*FO, $idx, $el);
+    $idx++;
   }
 }
 
 # ----------------------------------------------------------------------------
-sub xx_show_data
+sub dump_db_rec
+{
+  local *FO= shift;
+  my $i= shift;
+  my $el= shift;
+
+    unless (defined ($el))
+    {
+      print FO "data record [$i] not defined!\n";
+      return;
+    }
+
+    &print_recheader (*FO, "data record [$i]", $el, 'filters', 'flags');
+    # print FO "el= ", join (':', keys %$el), "\n";
+    print FO "data=\n";
+    &hex_dump ($el->{data}, *FO);
+    print FO $delim, "\n\n";
+}
+
+# ----------------------------------------------------------------------------
+sub dump_data_record
 {
   my $b= shift;
   my $ok= shift;
   my $o= shift;
 
-  print "xx_show_data:\n";
+  print "dump_data_record:\n";
   print join (':', %$o), "\n";
   # print "note: $nd\n" if ($nd);
 
@@ -1379,6 +1556,43 @@ sub hex_dump
 }
 
 # ----------------------------------------------------------------------------
+sub decode_password
+{
+  my ($b, $siz)= @_;
+
+  my $pass= &decode ($b, $siz, \@PRE_CODE, 1);
+
+  print "database is encrypted\npassword record, encrypted\n";
+  &hex_dump ($b);
+  # print "password record, decryption attempted (1)\n";
+  # &hex_dump ($pass);
+
+  my ($i, $c, $pad);
+  for ($i= 15; $i > 0; $i--)
+  {
+    $c= unpack ('C', substr ($pass, $i, 1));
+    if ($c != $PRE_PADDING [$i])
+    {
+      $i++;
+      last;
+    }
+  }
+  $pass= substr ($pass, 0, $i);
+  print "password record, decryption attempted (2)\n";
+  &hex_dump ($pass);
+
+# NOTE: [1998-07-25 10:50:16]
+# This algorithms is not quite correct yet.  The current
+# padding data would make it impossible to have certain characters
+# at a certain position in the passord.  E.G. this algorithm will
+# strip off the last digit of the password if the password was
+# 8 characters long and the original password ended with the
+# character '7'.  More work needs to be done here.
+
+  $pass;
+}
+
+# ----------------------------------------------------------------------------
 sub decode
 {
   my ($b, $siz, $code_ref, $is_pass)= @_;
@@ -1411,7 +1625,7 @@ sub decode
 }
 
 # ----------------------------------------------------------------------------
-sub recover_key
+sub recover_password
 {
   my $self= shift;
   my $note_nr= shift;
@@ -1450,6 +1664,7 @@ sub recover_key
 
   print "dumping key to $key_fnm\n";
   open (FO, ">$key_fnm") || die;
+  binmode (FI); # MS-DOS systems need this, T2D: how about Mac?
   print FO $key;
   close (FO);
 }
@@ -1463,7 +1678,7 @@ __END__
 
 =head1 NAME
 
-HP200LX::DB - Perl extension to access HP-200 LX database files
+HP200LX::DB - Perl module to access HP-200 LX database files
 
 =head1 SYNOPSIS
 
@@ -1483,10 +1698,11 @@ HP200LX::DB - Perl extension to access HP-200 LX database files
     T2D: $db->DELETE ($num)             delete given data record
     T2D: $db->INSERT ($num)             insert a new object at index
 
-  internal functions:
-    show_db_def                         show database definition
+  internal methods:
+    $db->show_db_def (*FH)              show database definition
+    $db->show_card_def (*FH)            show card layout definition
+    $db->get_field_def ($num)           retrieve field definition
     show_field_def                      show a field definition
-    show_data                           show one data record
     fetch_data                          used by FETCH to get db record
     store_data                          used by STORE to save db record
     get_recheader                       read gdb internal record structure
@@ -1495,14 +1711,18 @@ HP200LX::DB - Perl extension to access HP-200 LX database files
     get_fielddef                        decode a field definition record
     get_carddef                         decode a card definiton record
 
-  Diagnostics and Debugging:
-    print_recheader                     print details about a record
+  Diagnostics and Debugging methods:
+    $db->dump_db (*FH, $type)           dump a complete data base
+    $db->dump_data                      dump all data records
+    $db->recover_password               attempt to reconstruct DB password
+
+  Diagnostics and Debugging functions:
+    print_recheader (*FH, $txt, $rec)   print details about a record
     dump_def                            dump database definition
-    dump_data                           dump a data record
-    xx_show_data                        print and dump data record
+    dump_data_record                    print and dump data record
     hex_dump                            perform a hex dump of some data
-    decode                              attempt to decode a DB field
-    recover_key                         attempt to reconstruct DB password
+    decode_password                     attempt to decote the DB password
+    decode                              attempt to decode a DB recrod
 
 =head1 DESCRIPTION
 

@@ -1,17 +1,17 @@
 #
-# FILE %gg/perl/HP200LX/README
+# FILE .../CPAN/hp200lx-db/README
 #
-# $VERSION= '0.03';
+# $VERSION= '0.06';
 #
 # written:       1998-01-10
-# latest update: 1998-07-23 18:49:12
+# latest update: 1999-02-22 20:31:54
 #
 
 Purpose:
 
   DB.pm implements the perl package HP200LX::DB which is intended
   to provide a perl 5 interface for files in the generic database
-  format of the HP 200 LX palmtop computer.  The perl modules are
+  format of the HP 200LX palmtop computer.  The perl modules are
   intended to be used on a work station such as a PC or a Unix
   machine to read and write data records from and to a database
   file.
@@ -21,16 +21,16 @@ Goals and Non-Goals of this Project:
   The primary goal was to read and write complete generic database
   files, e.g. GDB, PDB or NDB files on a host computer.  The
   transfer from and to the palmtop computer, synchronization and
-  reconciliation are not considered at all.  Also, other built-in
-  applications operate on slightly different DB files, these
-  are not dealt with yet.  The creation, definition and layout
+  reconciliation were not considered at all yet.  Also, other
+  built-in applications operate on slightly different DB files,
+  these are not dealt with yet.  The creation, definition and layout
   are not handled yet.
 
   Project Roadmap:
   1. read/write GDB, PDB, and NDB files [quite complete]
   2. a simple GUI to browse the DB files [in progress]
   3. tools to import/export data in different formats [in progress]
-  4. extend the DB module for ADB and WDB files
+  4. extend the DB module for ADB and WDB files [in progress]
   5. creation of DB files including format definitions etc.
   6. dealing with encrypted DB files
 
@@ -43,6 +43,26 @@ Status:
 
   **WARNING**  This is already working but it's not completed yet!
 
+  Note: The package emits all sorts of diagnostic information, these
+        are not errors and change from release to release, depending
+        on the development progress.
+
+  Note: The DB formats have a number of limitations, this package
+        tries to enforce them but most are not dealt with properly yet.
+
+Installation:
+
+  The usual installation strategy
+
+    perl Makefile.PL
+    make
+    make test
+    make install
+
+  should produce viable modules.
+
+  Note: Under 4Dos do not run dmake.  "command /c dmake" should work.
+
 Limitations:
 
   Development has been driven by my own requirements and my needs
@@ -52,21 +72,44 @@ Limitations:
   + Databases can only be read or updated.  It's not possible to
     create a database from scratch.
   + When storing records to the database, make sure that fieldnames
-    match exactly, including blanks and case.
+    match exactly, including blanks, case, and national charactters.
   + Lines in note fields should be stored with \r\n line endings.
-  + No viewpoint table is rebuilt when a database is updated.  This
-    must be done explicitly on the HP 200LX after loading the database
-    by starting the "SORT" dialog.
-  + Databases with password protection are not handled yet.
+  + The viewpoint table is not rebuilt by default when a database is
+    updated.  This must be done explicitly on the HP 200LX after loading
+    the database by starting the "SORT" dialog.
+    Resorting a view point is usually done by pressing F7 and F10.
+    The DB now supports a method to update view points too:
+      $db->refresh_viewpt (-1);
+  + Databases with password protection are not handled yet, it
+    is however possible to read the password using the
+      $db->recover_password ();
+    method!
+    If you didn't already know, the password protection is not
+    very robust in the HP-LX!
   + Only GDB, PDB and NDB files are covered, the more special formats
+    ADB and WDB need a few more hacks.  As of now, these files can
+    be read but not written!
   + Be also aware of Perl's limited TIEARRAY implementation.
-    Array elements need to be accessed by index, no push, pop,
+    Array elements need to be accessed by index.  No push, pop,
     shift and unshift operators are available.
+
+Examples:
+
+  The directory "demo" contains a few code fragments, working scripts
+  can be found in the "scripts" directory:
+    catadb.pl           export the contents of an ADB file in various formats
+    catgdb.pl           export the contents of GDB, PDB, NDB and WDB files
+    txt2ndb.pl          import text paragraphs into a NDB file
+    xdb.pl              Perl/Tk GUI for DB files
+    leer.ndb            empty german NDB file used for txt2ndb.pl
 
 Availability and Contact:
 
-  This package is available from my FTP archive
-  ftp://ftp.wu-wien.ac.at/pub/usr/edvz/gonter/hp200lx/
+  This package is available from my FTP archives
+
+    ftp://ftp.wu-wien.ac.at/pub/usr/edvz/gonter/hp200lx/
+    http://falbala.wu-wien.ac.at:8684/pub/english.cgi/0/24065
+
   and I can be reached as Gerhard.Gonter@wu-wien.ac.at
   or g.gonter@ieee.org .
   Redistribution is permitted but it must include the README file.
@@ -95,27 +138,4 @@ Notes:
 All database data are read from file or written back in one burst.
 No attempt has been made to read data when it is accessed by the
 perl application.  This only complicates matters and does not seem
-to be necessar since a type HP 200 LX only has about 4 MB to store.
-
-
-Things left to be done for later:
-
-  $db2= $db1->dupDB ()                  copy the database
-  $db->clearDB ()                       delete data and note elements
-  $db->delete ($num)                    delete a data record including note
-
-
-retrieve DB format
-$fmt->{$Fieldname}=
-{
-  'type'        => type code,
-  'min_size'    => minimum size to display, e.g. DATE == 10 as in 1998-01-11
-  'max_size'    => maximum size to display
-};
-
-formatted print list output somehow
-
------
-possible import/export application which are not too specific:
-+ synchronization of a Phone Database with ELM/Pine/Netscape address books
-+ Netscape bookmarks
+to be necessary since a type HP 200LX only has about 4 MB to store.

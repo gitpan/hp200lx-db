@@ -1,0 +1,22 @@
+
+see also:
+<ul>
+<li><a href="adb-format.html">ADB: Appointment Book Database</a>
+<li><a href="ndb-format.html">NDB: Notetaker Database</a>
+<li><a href="pdb-format.html">PDB: Phonebook Database</a>
+<li><a href="wdb-format.html">WDB: World Time Database</a>
+</ul>
+<hr>
+
+Original german NDB card field definition:
+<table border=1>
+<tr><th>idx<th>name<th>type<th>x<th>y<th>w<th>h<th>Lsize
+<tr><td>0<td>Titel<td>STRING<td>2<td>18<td>361<td>15<td>50
+<tr><td><font color=red>1</font><td>Notiz<td>NOTE<td>18<td>55<td>611<td>123<td>64925
+<tr><td><font color=red>2</font><td>Kategorie<td>CATEGORY<td>376<td>18<td><font color=red>16</font><td>1<td><font color=red>128</font>
+</table>
+
+<p>
+fixup_ndb changes with and Lsize attributes of the category (Kategorie) field
+and orders the field sequence as [0, 2, 1]
+

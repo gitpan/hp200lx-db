@@ -1,0 +1,35 @@
+
+see also: <a href="ndb-format.html">ndb-format.html</a>
+
+original german WDB file format
+
+<table border=1>
+<tr><th>idx<th>name<th>type<th>x<th>y<th>w<th>h<th>Lsize
+<tr><td>0<td>Stadt<td>STRING<td>10<td>17<td>24<td>1<td>32
+<tr><td>1<td>Land<td>STRING<td>322<td>17<td>23<td>1<td>32
+<tr><td>2<td>Int'l Vorwahl<td>STRING<td>8<td>38<td>9<td>1<td>20
+<tr><td>3<td>Region Vorw.<td>STRING<td>256<td>38<td>9<td>1<td>20
+<tr><td>4<td>Ausw'liste<td>WORDBOOL<td>496<td>39<td>1<td>1<td>1
+<tr><td>5<td>Kategorie<td>CATEGORY<td>16<td>60<td>18<td>1<td>128
+<tr><td>6<td>&nbsp;<td>LIST<td colspan=5>&nbsp;
+<tr><td>7<td>Zeitunterschied zu<td>GROUP<td>306<td>61<td>329<td>37<td>0
+<tr><td>8<td>Std<td>U16<td>308<td>76<td>5<td>1<td>10
+<tr><td>9<td>System<td>RADIO_BUTTON<td>426<td>76<td>1<td>1<td>1
+<tr><td>10<td>Universal<td>RADIO_BUTTON<td>514<td>76<td>1<td>1<td>2
+<tr><td>11<td>Sommerzeit<td>GROUP<td>10<td>82<td>275<td>59<td>0
+<tr><td>12<td>Ja<td>RADIO_BUTTON<td>22<td>95<td>1<td>1<td>1
+<tr><td>13<td>Nein<td>RADIO_BUTTON<td>162<td>95<td>1<td>1<td>2
+<tr><td>14<td>Autom.<td>RADIO_BUTTON<td>22<td>115<td>1<td>1<td>3
+<tr><td>15<td>&nbsp;<td>COMBO<td>144<td>114<td>12<td>1<td>12
+<tr><td>16<td>&nbsp;<td>LIST<td colspan=5>&nbsp;
+<tr><td>17<td>Position<td>GROUP<td>306<td>101<td>328<td>37<td>0
+<tr><td>18<td>Breite<td>NUMBER<td>316<td>115<td>5<td>1<td>10
+<tr><td>19<td>Lnge<td>NUMBER<td>472<td>115<td>5<td>1<td>10
+<tr><td>20<td>Notiz<td>NOTE<td>12<td>146<td>623<td>37<td>0
+</table>
+
+<h2>type U16</h2>
+This field is labled in German "Zeitunterschied zu, Std"
+(time zone difference to, hours) but contains the difference
+in minutes.
+
