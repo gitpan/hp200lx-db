@@ -7,7 +7,8 @@
 # + DEL records
 #
 # written:       1998-03-08
-# latest update: 1999-05-24 12:52:34
+# latest update: 2001-03-11  2:23:09
+# $Id: $
 #
 
 package HP200LX::DBgui::card;
@@ -16,7 +17,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;

@@ -2,7 +2,8 @@
 # FILE .../CPAN/hp200lx-db/DB/tools.pm
 #
 # written:       1999-02-21
-# latest update: 1999-05-23 20:38:56
+# latest update: 2001-01-01 18:11:21
+# $Id: tools.pm,v 1.3 2001/01/01 20:31:05 gonter Exp $
 #
 
 package HP200LX::DB::tools;
@@ -11,7 +12,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT);
 use Exporter;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter);
 @EXPORT= qw(
   print_list

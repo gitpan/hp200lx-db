@@ -1,10 +1,11 @@
 #
 # FILE .../CPAN/hp200lx-db/README
 #
-# $VERSION= '0.07';
+# $VERSION= '0.09';
 #
 # written:       1998-01-10
-# latest update: 1999-05-23 11:18:31
+# latest update: 2000-01-02 22:06:11
+# $Id: $
 #
 
 Purpose:
@@ -132,8 +133,8 @@ interface functions
 array tie implementation to access database data records
   tie (@dbd, HP200LX::DB, $db);       access database data in array form
   TIEARRAY                            stub to get an tie for the database
-  FETCH                               retrieve a record         ** UNFINISHED **
-  STORE                               store a record            ** UNFINISHED **
+  FETCH                               retrieve a record
+  STORE                               store a record
   $db->get_last_index ()              return highest index
 
 Notes:

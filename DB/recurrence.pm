@@ -9,7 +9,8 @@
 # + mapping vCalendar recurrence format
 #
 # written:       1998-09-20
-# latest update: 1999-05-23 20:27:29
+# latest update: 2001-03-11  2:21:16
+# $Id: $
 #
 
 package HP200LX::DB::recurrence;
@@ -20,7 +21,7 @@ use Exporter;
 
 use HP200LX::DB qw(fmt_date fmt_time pack_date hex_dump);
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter);
 @EXPORT_OK= qw(:all
                new

@@ -1,4 +1,9 @@
-
+<html>
+<head>
+<title>PDB file format</title>
+</head>
+<body>
+<h1>PDB file format</h1>
 see also:
 <ul>
 <li><a href="adb-format.html">ADB: Appointment Book Database</a>
@@ -8,7 +13,7 @@ see also:
 </ul>
 <hr>
 
-<h2>original english phonebook card definition</h2>
+<h2>original english phonebook</h2>
 <table border=1>
 <tr><th>name<th>type<th>x<th>y<th>w<th>h<th>Lsize
 <tr><td>Name<td>STRING<td>2<td>12<td>635<td>15<td>87
@@ -28,6 +33,43 @@ see also:
 <tr><td>Note<td>NOTE<td>2<td>157<td>635<td>28<td>0
 </table>
 
+<hr>
 <h2>original german phonebook</h2>
-Unfortunately, I don't have one, if you can provide
-a unmodified german PDB file, please send it to me.
+<table border=1>
+<tr><th rowspan=2>idx<th rowspan=2>name<th colspan=3>type
+    <th rowspan=2>fid<th rowspan=2>off
+    <th rowspan=2>res<th rowspan=2>flags
+<th rowspan=2>x</th><th rowspan=2>y</th><th rowspan=2>h</th><th rowspan=2>w</th><th rowspan=2>Lsize</th></tr>
+<tr><th>num<th>name<th>size</tr>
+<tr><td align=right>0<td>'Name&nbsp;&nbsp;&nbsp;&nbsp;'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x00<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>15</td><td align=right>15</td><td align=right>635</td><td align=right>87</td></tr>
+<tr><td align=right>1<td>'B&uuml;ro'<td align=right>3<td>PHONE<td align=right>2<td align=right>0<td align=right>0x02<td align=right>0<td align=right>0x20<td align=right>72</td><td align=right>33</td><td align=right>15</td><td align=right>295</td><td align=right>30</td></tr>
+<tr><td align=right>2<td>'Priv.'<td align=right>3<td>PHONE<td align=right>2<td align=right>0<td align=right>0x04<td align=right>0<td align=right>0x20<td align=right>382</td><td align=right>33</td><td align=right>15</td><td align=right>255</td><td align=right>30</td></tr>
+<tr><td align=right>3<td>'Tel-Nr'<td align=right>12<td>STATIC<td align=right>0<td align=right>0<td align=right>0x00<td align=right>0<td align=right>0x80<td align=right>2</td><td align=right>35</td><td align=right>11</td><td align=right>71</td><td align=right>0</td></tr>
+<tr><td align=right>4<td>'Alternativ-Nr'<td align=right>3<td>PHONE<td align=right>2<td align=right>0<td align=right>0x06<td align=right>0<td align=right>0x20<td align=right>62</td><td align=right>51</td><td align=right>15</td><td align=right>305</td><td align=right>30</td></tr>
+<tr><td align=right>5<td>'Fax'<td align=right>3<td>PHONE<td align=right>2<td align=right>0<td align=right>0x08<td align=right>0<td align=right>0x20<td align=right>392</td><td align=right>51</td><td align=right>15</td><td align=right>245</td><td align=right>30</td></tr>
+<tr><td align=right>6<td>'Titel&nbsp;&nbsp;&nbsp;'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x0A<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>69</td><td align=right>15</td><td align=right>325</td><td align=right>39</td></tr>
+<tr><td align=right>7<td>'Kategorie'<td align=right>6<td>CATEGORY<td align=right>2<td align=right>0<td align=right>0x0C<td align=right>0<td align=right>0x20<td align=right>342</td><td align=right>69</td><td align=right>15</td><td align=right>283</td><td align=right>128</td></tr>
+<tr><td align=right>8<td>''<td align=right>14<td>LIST<td align=right>0<td align=right>0<td align=right>0x00<td align=right>0<td align=right>0x90<td align=right>0</td><td align=right>0</td><td align=right>5</td><td align=right>28</td><td align=right>0</td></tr>
+<tr><td align=right>9<td>'Firma&nbsp;&nbsp;&nbsp;'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x0E<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>87</td><td align=right>15</td><td align=right>635</td><td align=right>83</td></tr>
+<tr><td align=right>10<td>'Anschrift1'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x10<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>105</td><td align=right>15</td><td align=right>635</td><td align=right>83</td></tr>
+<tr><td align=right>11<td>'Anschrift2'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x12<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>123</td><td align=right>15</td><td align=right>635</td><td align=right>83</td></tr>
+<tr><td align=right>12<td>'Ort&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x14<td align=right>0<td align=right>0x20<td align=right>2</td><td align=right>141</td><td align=right>15</td><td align=right>285</td><td align=right>35</td></tr>
+<tr><td align=right>13<td>'Land'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x16<td align=right>0<td align=right>0x20<td align=right>302</td><td align=right>141</td><td align=right>15</td><td align=right>165</td><td align=right>40</td></tr>
+<tr><td align=right>14<td>'PLZ'<td align=right>2<td>STRING<td align=right>2<td align=right>0<td align=right>0x18<td align=right>0<td align=right>0x20<td align=right>482</td><td align=right>141</td><td align=right>15</td><td align=right>155</td><td align=right>17</td></tr>
+<tr><td align=right>15<td>'Notiz'<td align=right>10<td>NOTE<td align=right>2<td align=right>0<td align=right>0x1A<td align=right>0<td align=right>0x00<td align=right>2</td><td align=right>159</td><td align=right>28</td><td align=right>635</td><td align=right>0</td></tr>
+</table>
+
+<hr>
+<h2>Recreating an original, empty PDB file</h2>
+The phonebook application will clone the last opened PDF file.
+When the PDB file is modified, new PDB file will usually also be
+modified.  To recreate an original file, you need to close the
+phonebook application, delete C:\_DAT\PHONE.ENV and rename
+C:\_DAT\PHONE.PDB to something else.  When you then start the
+phonebook application again, it should recreate an empty PHONE.PDB
+file with the original fields and layout.
+
+<hr>
+$Id: pdb-format.html,v 1.2 2001/01/01 20:13:59 gonter Exp $
+</body>
+</html>

@@ -6,7 +6,13 @@
 #
 
 The Perl module familiy HP200LX::DB and HP200LX::DBgui version 0.07
-should be available from any CPAN mirror near you soon.
+should be available from any CPAN mirror near you soon.  It was
+uploaded earlier today and confirmed by the CPAN daemons:
+
+  The uploaded file hp200lx-db-0.07.tar.gz has entered CPAN as
+  file: $CPAN/authors/id/G/GG/GGONTER/hp200lx-db-0.07.tar.gz
+  size: 51772 bytes
+   md5: db03e4b26ffe9e86892c46c868c9c31f
 
 This release contains a couple of improvements and bug fixes and
 a bit better error and constraint handling.

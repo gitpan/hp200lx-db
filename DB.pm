@@ -4,10 +4,14 @@
 # access HP 200LX database files
 # See POD Section for a few more details
 #
-# work area: decode_type14
+# work area:
+#   decode_type14
+#   dump_type .. export everything in ASCII format
+#   loader .. import everything from ASCII format
 #
 # written:       1997-12-28 (c) g.gonter@ieee.org
-# latest update: 1999-05-23 15:33:41
+# latest update: 2001-02-09 17:22:39
+# $Id: DB.pm,v 1.13 2001/03/05 01:52:39 gonter Exp $
 #
 
 package HP200LX::DB;
@@ -16,8 +20,8 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT_OK @REC_TYPE);
 use Exporter;
 
-$VERSION = '0.07';
-@ISA = qw(Exporter);
+$VERSION= '0.09';
+@ISA= qw(Exporter);
 @EXPORT_OK= qw(openDB saveDB
   fmt_date fmt_time pack_date hex_dump
 );
@@ -87,7 +91,7 @@ my @FIELD_TYPE=            # HP's internal field type definitions
   { 'Desc' => 'CATEGORY',     'Size' => 2, },      #  6
   { 'Desc' => 'TIME',         'Size' => 2, },      #  7     Test: store
   { 'Desc' => 'DATE',         'Size' => 3, },      #  8     Test: store
-  { 'Desc' => 'RADIO_BUTTON', 'Size' => 1, },      #  9     Note: 1 byte, may be 2?
+  { 'Desc' => 'RADIO_BUTTON', 'Size' => 2, },      #  9     Note: should be 1 byte but it uses 2 bytes!
   { 'Desc' => 'NOTE',         'Size' => 2, },      # 10     Store: seems to work now
   { 'Desc' => 'GROUP',        'Size' => 0, },      # 11
   { 'Desc' => 'STATIC',       'Size' => 0, },      # 12: Label
@@ -107,38 +111,56 @@ my @FIELD_TYPE=            # HP's internal field type definitions
 );
 
 # ----------------------------------------------------------------------------
-my @PRE_CODE=
-( # so called secret key... (checked againsthpcrack.c)
-  0xE1, 0xA8, 0xF7, 0x14, 0x0B, 0xC5, 0x49, 0x42,       # 0x00
-  0xAC, 0x73, 0xFA, 0xA9, 0x78, 0xDD, 0x48, 0x6D,       # 0x08
-# The rest is pure guesswork ... (1998-01-03 12:10:50)
-  0x71, 0x33, 0x50, 0x8E, 0xDD, 0x9C, 0x83, 0x5B,       # 0x10
-  0xAD, 0xDF, 0x28, 0xBA, 0xC0, 0xC8, 0xA5, 0xF3,       # 0x18
-  0x26, 0xA5, 0xE1, 0xE7, 0x2F, 0x1C, 0x2C, 0xD7,       # 0x20
-  0x0A, 0xA3, 0x9C, 0x34, 0xCC, 0x59, 0xF2, 0x7F,       # 0x28
-  0x1D, 0x4A, 0xDD, 0xFF, 0xDE, 0x16, 0xA9, 0x4E,       # 0x30
-  0xC0, 0x92, 0x5C, 0xA8, 0x09, 0x2F, 0xDD, 0x1D,       # 0x38
-  0xD9, 0x97, 0x75, 0x0D, 0x32, 0x7B, 0x5E, 0x9E,       # 0x40
-  0xC0, 0x3C, 0x6C, 0xDA, 0xDF, 0x06, 0x41, 0xDE,       # 0x48
-  0xC2, 0x40, 0xCD, 0xAC, 0x9C, 0x56, 0xCF, 0x6A,       # 0x50
-  0x3E, 0xD7, 0xE3, 0x08
+# The HP-LX's password protection engine uses a two constant code blocks:
+# CODE_A is 127 byte long, CODE_B is 17 byte long
+my @CODE_A=
+(
+  0xe8, 0xa3, 0xfe, 0x1b, 0x02, 0xce, 0x40, 0x35,
+  0xa4, 0x7b, 0xf2, 0xa1, 0x70, 0xd5, 0x40, 0x65,
+  0x09, 0x42, 0x23, 0xff, 0xaa, 0xed, 0xf0, 0x2a,
+  0xa2, 0xa9, 0x38, 0xd7, 0xe5, 0x95, 0xea, 0x8c,
+  0x46, 0xdd, 0x90, 0x94, 0x5e, 0x6b, 0x5d, 0xa4,
+  0x7b, 0x8c, 0xea, 0x24, 0xa1, 0x7c, 0xaf, 0x30,
+  0x62, 0x2a, 0xa5, 0x8e, 0xad, 0x67, 0xde, 0x3f,
+  0xb3, 0xe3, 0x53, 0xde, 0x19, 0x42, 0xf8, 0x40,
+  0x96, 0xe8, 0x15, 0x75, 0x43, 0x08, 0x2f, 0xe9,
+  0xb1, 0x4f, 0x1d, 0xd5, 0xa9, 0x16, 0x2c, 0xfb,
+  0x9f, 0x0f, 0xb2, 0xcc, 0xe4, 0x27, 0xbc, 0x1b,
+  0x49, 0xa6, 0x90, 0x79, 0x03, 0x9a, 0xa6, 0x1a,
+  0x70, 0x89, 0x9d, 0x35, 0x81, 0xad, 0x80, 0xb0,
+  0x79, 0x45, 0x21, 0x5f, 0x94, 0x1c, 0xd1, 0x3f,
+  0xdf, 0xa8, 0xa3, 0x40, 0x31, 0x34, 0x66, 0x84,
+  0x85, 0x28, 0xf1, 0x8d, 0x82, 0x04, 0xa4
 );
-my @PRE_PADDING=
-( # padding data used to strip away the remainder of the password
-  0xFF, 0x13, 0x72, 0x4F, 0x7F, 0x22, 0x40, 0x37,       # 0x00
-  0x7E, 0x18, 0x65, 0x2D, 0x55, 0x47, 0x77, 0x68,       # 0x08
+
+my @CODE_B=
+(
+  0x09, 0x0b, 0x09, 0x0f, 0x09, 0x0b, 0x09, 0x77,
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+  0x78
+);
+my @DIAG_K;  # used for diagnosing the decryption functions
+
+# 17 byte code to decrypt the password
+my @PW_CODE=
+(
+  0xE1, 0xA8, 0xF4, 0x17, 0x0B, 0xE7, 0x09, 0x75,       # 0x00
+  0xD2, 0x6B, 0x9F, 0x84, 0x2D, 0x9A, 0x3F, 0x05,       # 0x08
+  0x71
 );
 
 # ----------------------------------------------------------------------------
 my %XHDR=       # debugging: headers that will not be printed
 (
-  'sig' => 1, 'time' => 1, 'lookup_table_offset' => 1, 'recheader' => 1,
+  'sig' => 1, 'time' => 1, 'lookup_table_offset' => 1,
+  'recheader' => 1, 'file_type' => 1,
 );
 
 # ----------------------------------------------------------------------------
 # create a new (empty) database object
 sub new
 {
+  my $class= shift;
   my $fnm= shift;
   my $apt= shift || &derive_apt ($fnm);
 
@@ -167,7 +189,7 @@ sub new
       {
         'type'      => 0,
         'status'    => 0,
-        'length'    => 19,
+        'length'    => 25,
         'idx'       => 0,
       },
 
@@ -175,7 +197,7 @@ sub new
       {
         'year'      => $t[5]+1900,
         'mon'       => $t[4]+1,
-        'day'       => $t[3]+1,
+        'day'       => $t[3],
         'min'       => $t[2]*60 + $t[1],
       },
 
@@ -202,7 +224,7 @@ sub new
     'update'            => 0,   # number of items modified
   };
 
-  bless $obj;
+  bless $obj, $class;
 }
 
 # ----------------------------------------------------------------------------
@@ -254,11 +276,11 @@ sub openDB
   my $APT= shift;
   my $dont_decrypt= shift;
 
-  my $obj= new ($fnm, $APT);
+  my $obj= new HP200LX::DB ($fnm, $APT);
   $APT= $obj->{APT};  # use application detection logic in new
   my $b;
   my $sig;
-  local (*FI);
+  local *FI;
 
   unless (open (FI, $fnm))
   {
@@ -319,7 +341,7 @@ sub openDB
   {
     seek (FI, $lookup_table_offset, 0);
     $xrec= &get_recheader (*FI);
-    # &print_recheader (*STDOUT, "lookup table:", $xrec);
+    # &print_recheader (*STDOUT, "lookup table (offset=$lookup_table_offset)", $xrec);
     $lng= $xrec->{'length'}-6;
     $i= read (FI, $b, $lng);
 
@@ -369,6 +391,7 @@ sub openDB
     {
       $v= unpack ('v', substr ($b, $i*2, 2));
       push (@ftbl, $v);
+      # print "ftbl[$i]= $v\n";
     }
     # $hdr->{typefirst_table}= \@ftbl;
   } # lookup table read
@@ -441,19 +464,17 @@ sub analyze_record
   my $type= $xrec->{type};
   my $siz= $xrec->{length}-6;
 
+  # $xrec only contains only fields from the LUT
+  # filters:length:type:off:status:flags:idx
+  # inserts only $xrec->{data} which contains the (decrypted) data
+
     if ($type > 1 && $obj->{Meta} eq 'Encrypted' && !$obj->{dont_decrypt})
-    { # NOTE: currently only decrypts parts of the data correctly!
-      # password record; this code is very experimental!
-      # my $kk;
-      # print '-'x72, "\nencoded [type=$type, $REC_TYPE[$type]]\n";
-      # print "session key=";
-      # foreach $kk (@{$obj->{CODE}}) { printf (" 0x%02X", $kk); }
-      # print "\n";
-      # &hex_dump ($b);
+    {
+      # print "DATA encoded \n"; &hex_dump ($b);
 
-      $b= &decode ($b, $siz, $obj->{CODE}, 0);
+      $b= &decrypt_data ($b, $siz, $obj->{Key});
 
-      # print "decoded\n"; &hex_dump ($b);
+      # print "DATA decoded\n"; &hex_dump ($b); print "\n";
     }
 
     $xrec->{data}= $b;
@@ -493,37 +514,11 @@ sub analyze_record
       }
 
       # decode and print the password
-      my $pass= &decode_password ($b, $siz);
+      my ($pass, $key)= &decrypt_password ($b, $siz);
       $obj->{Password}= $pass;
-
-      # setup session key (works only for the first 17 bytes!
-      my @SESSION_KEY= split (/|/, substr ($b, 0, length ($pass)));
-      my $kk;
-      foreach $kk (@SESSION_KEY) { $kk= unpack ('C', $kk); }
-      # push (@SESSION_KEY, @PRE_PADDING[length($pass)..15]);
-      print "session key length: $#SESSION_KEY\n";
-      $obj->{CODE}= \@SESSION_KEY;
-
-      if (1 && open (FK, 'key.bin'))
-      {
-        binmode (FK);    # MS-DOS systems need this, how about the Mac?
-
-        my $key;
-        my $key_size= 512; # up to 21400 byte
-        read (FK, $key, $key_size);
-        close (FK);
-        for ($kk= length($pass); $kk < $key_size ; $kk++)
-        { $obj->{CODE}[$kk]= unpack ('C', substr ($key, $kk, 1)); }
-        for ($kk= 17; $kk < $key_size; $kk += 17)
-        {
-          $obj->{CODE}[$kk+0] ^= 0x4A;  # p^78
-          $obj->{CODE}[$kk+1] ^= 0x27;  #  ^13
-          $obj->{CODE}[$kk+2] ^= 0x40;  #  ^72
-          $obj->{CODE}[$kk+3] ^= 0x7E;  #  ^4f
-          $obj->{CODE}[$kk+4] ^= 0x4B;  #  ^7f
-        }
-      }
-
+      $obj->{Key}= $key;
+      # print "session key:\n";
+      # &hex_dump ($key);
     } # END of type == 1 processing; password record
 
     elsif ($type == 4) # CARDDEF
@@ -538,12 +533,15 @@ sub analyze_record
     }
     elsif ($type == 7) # VIEWPTDEF
     {
+      # print ">>> view point defintion\n"; &hex_dump ($b);
       my $vptd= &get_viewptdef ($b);
+      # $vptd->show_viewptdef (*STDOUT);
       push (@{$obj->{viewptdef}}, $vptd);
       $vptd->{index}= $#{$obj->{viewptdef}};
     }
     elsif ($type == 10) # VIEWPTTABLE
     {
+      # print ">>> view point table\n"; &hex_dump ($b);
       push (@{$obj->{viewpttable}}, &get_viewpttable ($b));
     }
     elsif ($type == 13) # CARDPAGEDEF
@@ -568,8 +566,17 @@ sub analyze_record
 
         # print "b='$b'\n";
         &hex_dump ($b);
+        $obj->{has_unknown_records}++;
       }
     }
+}
+
+# ----------------------------------------------------------------------------
+sub has_errors
+{
+  my $self= shift;
+  return 1 if ($self->{has_unknown_records});
+  0;
 }
 
 # ----------------------------------------------------------------------------
@@ -647,7 +654,7 @@ sub saveDB
   $hdr->{lookup_table_offset}= $off;
   $hdr->{num_recs}= $num_recs;
 
-  local (*FO);
+  local *FO;
   open (FO, ">$fnmo") || die;
   binmode (FI); # MS-DOS systems need this, T2D: how about Mac?
 
@@ -730,11 +737,12 @@ sub print_summary
   my $h= int ($min/60);
   $min= $min%60;
 
-  printf ("Type %-24s  Recs View   Hash %16s Comment\n",
-          'Filename', 'modified')
+  printf ("Type %-24s  Recs View   Hash %-16s Comment\n",
+          'Filename', 'created')
     if ($prt_hdr);
 
   my $Comment;
+  $Comment .= ' CORRUPTED!' if ($db->has_errors);
   $Comment .= ' Password' if ($db->{Meta} eq 'Encrypted');
 
   printf ("%-4s %-24s %5d %4d 0x%04X %4d-%02d-%02d %2d:%02d%s\n",
@@ -759,9 +767,9 @@ sub get_field_def
 sub show_db_def
 {
   my $self= shift;
-  local (*FO)= shift;
+  local *FO= shift;
 
-  my $Fdef= $self->{fielddef};
+  my $Fdef= $self->{'fielddef'};
   my $field;
   my $num= 0;
   my %off= (); # sorted by offset
@@ -779,6 +787,7 @@ sub show_db_def
   }
 
   $num= 0;
+
   print FO $delim, "\n", "DB def by offset position\n", $hdr;
   foreach $off (sort keys %off)
   {
@@ -796,20 +805,26 @@ sub show_db_def
 sub show_card_def
 {
   my $self= shift;
-  local (*FO)= shift;
+  local *FO= shift;
 
-  my $Cdef= $self->{carddef};
+  my $Cdef= $self->{'carddef'};
   return if ($#$Cdef < 0);
   my ($field, $f);
 
   print FO "card definition:\n";
+  my $i= 0;
   foreach $field (@$Cdef)
   {
     # &show_field_window ($field);
-    print FO "field:";
+    printf FO ("field [%2d]:", $i++);
     foreach $f (sort keys %$field)
     {
-      print " $f=$field->{$f},";
+      if ($f eq 'Parent' || $f eq 'Style')
+      {
+        printf (" %s=%8X,", $f, $field->{$f});
+      } else {
+        printf (" %s=%3d,", $f, $field->{$f});
+      }
     }
     print "\n";
   }
@@ -848,7 +863,9 @@ sub dump_type
   my $self= shift;
   local *FO= shift;
   my $Ty= shift;        # if undef, dump all items
+  my $Format= shift || 'auto';
 
+  # print '# ', join (' ', keys %$self), "\n";
   my ($T, $Ty_from, $Ty_end);
 
   unless (defined ($T= $self->{Types}))
@@ -866,6 +883,13 @@ sub dump_type
     my $c= $#$D;
     next if ($c == -1);
 
+    my $format= $Format;
+    if ($Format eq 'auto')
+    { # see @REC_TYPE
+      if ($Ty == 5 || $Ty == 9 || $Ty == 11) { $format= 'QP'; }
+      else { $format= 'HEX'; }
+    }
+
     my $ty_str= $REC_TYPE[$Ty] || "USER$Ty";
 
     my ($i, $Dk, $Dv, $cp, $ch, $cv, $lng, $llng);
@@ -875,37 +899,121 @@ sub dump_type
 
       $Dv= $D->[$i];
       # NOTE: fields not written: off (completely redundant)
-      # off filters flags come from the LUT
+      # off, filters, and flags come from the LUT
+      # print FO '# ZZ ', join (' ', keys %$Dv), "\n";
       foreach $Dk (qw(type idx length status filters flags))
       {
         next unless (defined ($Dv->{$Dk}));
         print FO "<$Dk>$Dv->{$Dk}\n";
       }
-      print FO "<data>\n";
-      # &hex_dump ($Dv->{data}, *FO);
 
-      my $data= $Dv->{data};
-      $lng= length ($data);
-      for ($cp= 0; $cp < $lng; $cp++)
+      print FO "<data fmt=$format>\n";
+      if ($format eq 'HEX')
       {
-        $cv= unpack ('C', $ch= substr ($data, $cp, 1));
-
-        if (($cv >= 0x00 && $cv <= 0x1F)
-            || ($cv >= 0x3C && $cv <= 0x3E)
-            || ($cv >= 0x7F && $cv <= 0xFF)
-           )
-        {
-          $ch= sprintf ("=%02X", $cv);
-          $llng += 3;
-        }
-        else { $llng++; }
-
-        print FO $ch;
-        if ($llng > 72) { print FO "=\n"; $llng= 0; }
+        &hex_dump ($Dv->{data}, *FO);
       }
-      if ($llng > 0) { print FO "\n"; $llng= 0; }
+      else # especially if ($format eq 'QP')
+      {
+        my $data= $Dv->{data};
+        $lng= length ($data);
+        for ($cp= 0; $cp < $lng; $cp++)
+        {
+          $cv= unpack ('C', $ch= substr ($data, $cp, 1));
+
+          if (($cv >= 0x00 && $cv <= 0x1F)
+              || ($cv >= 0x3C && $cv <= 0x3E)
+              || ($cv >= 0x7F && $cv <= 0xFF)
+             )
+          {
+            $ch= sprintf ("=%02X", $cv);
+            $llng += 3;
+          }
+          else { $llng++; }
+
+          print FO $ch;
+          if ($llng > 72) { print FO "=\n"; $llng= 0; }
+        }
+        if ($llng > 0) { print FO "\n"; $llng= 0; }
+      }
 
       print FO "</data>\n</record>\n\n";
+    }
+  }
+}
+
+# ----------------------------------------------------------------------------
+# load ASCII file; name should be changed...
+sub loader
+{
+  my $self= shift;
+  local *FI= shift;
+
+  my $status= 'undef';
+  my ($rec, $counter, $b, $format);
+  while (<FI>)
+  {
+    chomp;
+    # print ">>> $_\n";
+
+    if (m#<record>#)
+    {
+      $rec= {};
+      $status= 'record';
+      $counter++;
+      $b= '';
+    }
+    elsif (m#</record>#)
+    {
+      if ($status ne 'record' && $status ne 'data')
+      {
+        print "WARNING: unexpected status $status\n";
+      }
+
+      # analyze header if necessary:
+      # filters:length:type:off:status:flags:idx
+      # print ">>> insert record: ", join (':', %$rec), "\n";
+      # &hex_dump ($b);
+      &analyze_record ($self, $rec, $counter, $b);
+      $status= 'undef';
+    }
+    elsif (m#<data fmt=(.+)>#)
+    {
+      $format= $1;
+      $status= 'data';
+    }
+    elsif (m#</data>#)
+    {
+      $status= 'record';
+    }
+    elsif (m#<(type|idx|length|status|filters|flags)>(.*)#)
+    {
+      $rec->{$1}= $2;
+    }
+    elsif ($status eq 'data')
+    {
+      if ($format eq 'QP')
+      {
+        s/=$//;
+        s/=([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $b .= $_;
+      }
+      elsif ($format eq 'HEX')
+      {
+        my @x= split (/\|/);
+        @x= split (' ', $x[0]);
+        shift (@x);
+        # print "[", join (':', @x), "]\n";
+        $b .= pack ("C*", map { hex ($_); } @x);
+      }
+      else
+      {
+        print "WARNING: unexpected data format: '$format'\n";
+      }
+    }
+    elsif (/^#/ || /^[ \t]*$/) {} # comment
+    else
+    {
+      print "WARNING: unexpected data: '$_'\n";
     }
   }
 }
@@ -979,6 +1087,7 @@ sub STORE
   my $db= shift;
   my $idx= shift;
   my $val= shift;
+  # print "STORE: ", join (':', %$val), "\n";
 
   my $T= $db->{Types} || die;
   my $D= $T->[11];  # array of data records
@@ -1034,6 +1143,13 @@ sub STORE_note_raw
   my $N= $T->[9];   # array of note records
   $N->[$idx]->{data}= $data;
   $db->{update}++;
+}
+
+# ----------------------------------------------------------------------------
+sub FETCHSIZE
+{
+  my $db= shift;
+  return 1 + $db->get_last_index();
 }
 
 # ----------------------------------------------------------------------------
@@ -1281,7 +1397,7 @@ sub store_data
 
     $APT2= $data->{type} if ($APT eq 'ADB');
 
-    # print "offset= $off name=$name val=$val\n";
+    # print "offset= $off type=$type name=$name val='$val'\n";
 
       if ($type == 0)           # BYTEBOOL
       {
@@ -1302,6 +1418,7 @@ sub store_data
           # see note below
           $nil_addr= $rec_size;
           $b [$rec_size++]= "\000";
+          # print "insert nil at $nil_addr, rec_size=$rec_size\n";
         }
 
         if ($val)
@@ -1314,6 +1431,7 @@ sub store_data
         { # store pointer to the empty string record
           $b [$off] = pack ('v', $nil_addr);
         }
+        # &hex_dump ($b[$off]);
       }
       elsif ($type == 7)         # TIME
       {
@@ -1340,7 +1458,7 @@ sub store_data
         $checked= 0 if ($v= $RB{$off});     # only the first button is valid
         $RB{$off}= $v= $field->{res} if ($checked);
 
-        $b [$off]= pack ('C', $v);
+        $b [$off]= pack ('v', $v); # Note: should be 'c' ?!?!
       }
       elsif ($type == 10)       # NOTE
       { # store note record
@@ -1399,6 +1517,7 @@ sub store_data
     {
       print "ERROR: resulting record size does not match!\n",
             "length=", length ($b), " rec_size=$rec_size\n";
+      &hex_dump ($b);
       my ($x, $y);
       for ($x= 0; $x <= $#b; $x++)
       {
@@ -1421,7 +1540,7 @@ sub store_data
 # read a 6 byte record header
 sub get_recheader
 {
-  local (*F)= shift;
+  local *F= shift;
   my $b;
 
   read (F, $b, 6) || return undef;
@@ -1439,13 +1558,14 @@ sub get_recheader
 }
 
 # ----------------------------------------------------------------------------
-# read a 6 byte record header
+# write a 6 byte record header
 sub put_recheader
 {
-  local (*F)= shift;
+  local *F= shift;
   my $r= shift;
 
-  my $b= pack ('CCvv', $r->{type}, $r->{status}, $r->{'length'}, $r->{idx});
+  my $b= pack ('CCvv', $r->{'type'}, $r->{'status'},
+                       $r->{'length'}, $r->{'idx'});
   print F $b;
 }
 
@@ -1454,8 +1574,8 @@ sub fmt_time_stamp
 {
   my $time= shift;
   my $Time= sprintf ("%d-%02d-%02d %2d:%02d",
-                    1900 + $time->{year}, $time->{mon}+1, $time->{day}+1,
-                    $time->{min} / 60, $time->{min} % 60);
+                    $time->{'year'}, $time->{'mon'}+1, $time->{'day'}+1,
+                    $time->{'min'} / 60, $time->{'min'} % 60);
 
   $Time;
 }
@@ -1565,11 +1685,6 @@ sub show_field_def
             $num, $type, $ttype, $x_siz, "'$x_name'",
             $fdef->{fid}, $x_off, $fdef->{res}, $x_flg;
 
-  #print FO "<tr><td align=right>$num<td align=middle>&nbsp;<td align=middle>",
-  #         "&nbsp;<td align=right>$type<td>$ttype<td align=right>$x_siz",
-  #         "<td align=right>$fdef->{fid}<td align=right>$x_off",
-  #         "<td align=right>$fdef->{res}<td align=right>$x_flg",
-  #         "<td>'$x_name'\n";
   # print FO "<td>'$x_name'\n";
   # print FO "[$num] type= $ttype ($type) name='$fdef->{name}'"
   #          " id=$fdef->{fid} off=$x_off res=$fdef->{res} flg=$x_flg\n";
@@ -1643,7 +1758,7 @@ sub print_recheader
 sub dump_def
 {
   my $self= shift;
-  local (*FO)= shift;
+  local *FO= shift;
   my $level= shift;
 
   my $hdr= $self->{Header};
@@ -1652,6 +1767,7 @@ sub dump_def
   my $fld;
   my $sig= substr ($hdr->{sig}, 0, 3);
   my $x_ltable= sprintf ("0x%08lX", $hdr->{lookup_table_offset});
+  my $APT= &decode_apt ($hdr->{file_type});
 
   print FO <<EOX;
 Filename: $self->{Filename}
@@ -1660,6 +1776,7 @@ DB Header:
   sig= $sig
   time= $Time
   lookup_table_offset= $x_ltable
+  file_type= $hdr->{file_type} $APT
 EOX
 
   foreach $fld (sort keys %$hdr)
@@ -1667,10 +1784,10 @@ EOX
     print FO "  $fld= $hdr->{$fld}\n" unless (defined ($XHDR{$fld}));
   }
 
-  &print_recheader (*FO, 'record header:', $hdr->{recheader});
+  # &print_recheader (*FO, 'record header:', $hdr->{recheader});
   # print FO 'self:: ', join (',', sort keys %$self), "\n";
 
-  $level= 0 if ($self->{Meta} eq 'Encrypted' && $level < 10);
+  # $level= 0 if ($self->{Meta} eq 'Encrypted' && $level < 10);
 
   if ($level > 0)
   {
@@ -1692,7 +1809,7 @@ EOX
 sub dump_db
 {
   my $self= shift;
-  local (*FO)= shift;
+  local *FO= shift;
   my $type= shift;
   my $idx= shift;
 
@@ -1788,74 +1905,96 @@ sub hex_dump
       }
     }
 
-    print FX "$offx $hex $char\n";
+    print FX "$offx $hex |$char|\n";
   }
 }
 
 # ----------------------------------------------------------------------------
-sub decode_password
+# Decrypt the password of a HP 200LX Database.
+# This function implements the algorithm in Curtis Cameron's dbcheck program.
+# Returns a session key and the original password.  I'm not quite sure
+# if the original password is correct in all cases, this needs more testing.
+sub decrypt_password
 {
   my ($b, $siz)= @_;
+  my ($pass, $key);
 
-  my $pass= &decode ($b, $siz, \@PRE_CODE, 1);
-
-  print "database is encrypted\npassword record, encrypted\n";
-  &hex_dump ($b);
-  # print "password record, decryption attempted (1)\n";
-  # &hex_dump ($pass);
-
-  my ($i, $c, $pad);
-  for ($i= 15; $i > 0; $i--)
+  if ($siz != 17)
   {
-    $c= unpack ('C', substr ($pass, $i, 1));
-    if ($c != $PRE_PADDING [$i])
-    {
-      $i++;
-      last;
-    }
+    print "WARNING: decrypt_password (siz=$siz): ",
+          "password block size should be 17 byte!\n";
   }
-  $pass= substr ($pass, 0, $i);
-  print "password record, decryption attempted (2)\n";
+
+  my ($i, $c, $k, $p);
+  for ($i= 0; $i < 17; $i++)
+  {
+    $c= unpack ('C', substr ($b, $i, 1));
+    $k= $c ^ $i ^ $CODE_A[$i];
+    # my $diag= sprintf ("%02X ^ %02X ^ A[%3d]=%02X", $c, $i, $i, $CODE_A[$i]);
+
+    # this CODE_B round cancels the effect of the same thing in decrypt_data
+    # $k ^= $CODE_B[$i];
+    # $diag .= sprintf (" ^ B[%2d]=%02X", $i, $CODE_B[$i]);
+
+    push (@$key, $k);
+    # push (@DIAG_K, $diag);
+
+    $p= $PW_CODE [$i] ^ $c;
+    $pass .= pack ('C', $p) if ($p > 0x00);
+  }
+
+  print "database is encrypted\npassword record, encrypted, siz=$siz\n";
+  &hex_dump ($b);
+  print "password record, decryption attempted (1)\n";
   &hex_dump ($pass);
+  print "password= '$pass'\n";
 
-# NOTE: [1998-07-25 10:50:16]
-# This algorithms is not quite correct yet.  The current
-# padding data would make it impossible to have certain characters
-# at a certain position in the passord.  E.G. this algorithm will
-# strip off the last digit of the password if the password was
-# 8 characters long and the original password ended with the
-# character '7'.  More work needs to be done here.
-
-  $pass;
+  ($pass, $key);
 }
 
 # ----------------------------------------------------------------------------
-sub decode
+# Decrypt the data portion of a HP 200LX Database record.
+# This function implements the algorithm in Curtis Cameron's dbcheck program.
+sub decrypt_data
 {
-  my ($b, $siz, $code_ref, $is_pass)= @_;
-  my $CODE_SIZE= $#$code_ref;
-  my @CODE= @$code_ref;
-  # my @CODE= @PRE_CODE;
-  # my $CODE_SIZE= $#CODE;
+  my ($b, $siz, $code_ref)= @_;
 
-  my ($bb, $ii, $jj, $cc, $c0, $kk);
-
+  my ($cc, $c0, $bb);
+  my ($c_a, $c_b, $c_k);
+  my ($ii, $i_127, $i_17);
   for ($ii= 0; $ii < $siz; $ii++)
   {
-    $cc= $c0= unpack ('C', substr ($b, $ii, 1));
+    $c0= unpack ('C', substr ($b, $ii, 1));
 
-    $kk= $CODE [$jj];
-    $cc= $cc ^ $kk;
-    $cc= $cc ^ $jj unless ($is_pass);
-    $bb .= pack ('C', $cc);
+    $c_a= $CODE_A [$i_127];
+    $c_k= $code_ref->[$i_17];
+    $cc= $c0 ^ $c_k ^ $c_a;
 
-    if ($is_pass && 0)
+    # my $diag= sprintf ("[%4d] %02X ^ K[%2d]=(%s)=%02X ^ A[%3d]=%02X",
+    #             $ii, $c0,
+    #             $i_17, $DIAG_K[$i_17], $c_k,
+    #             $i_127, $c_a);
+
+    # this CODE_B round cancels the effect of the same thing in decrypt_password
+    # $c_b= $CODE_B [$i_17];
+    # $cc ^= $c_b;
+    # $diag .= sprintf (" ^ B[%3d]=%02X", $i_17, $c_b);
+
+    if ($ii > 126)
     {
-      printf "ii=$ii kk=0x%02X jj=$jj c: 0x%02X -> 0x%02X\n",
-              $kk, $c0, $cc;
+      my $ti;
+      for ($ti= $ii-127; $ti >= 0; $ti -= 127)
+      {
+        $c_b= $CODE_B [$ti % 17];
+        $cc ^= $c_b;
+        # $diag .= sprintf (" ^ B[%3d]=%02X", $ti%17, $c_b);
+      }
     }
+    # $diag .= sprintf (" =: %02X %c", $cc, $cc); print $diag, "\n";
 
-    $jj= 0 if ($jj++ >= $CODE_SIZE);
+    $bb .= pack ('C', $cc);
+    $i_17= 0  if (++$i_17  >=  17);
+    $i_127= 0 if (++$i_127 >= 127);
   }
 
   $bb;
@@ -1906,6 +2045,12 @@ sub recover_password
   close (FO);
 }
 
+# ----------------------------------------------------------------------------
+sub get_field_type
+{
+  my $ty= shift;
+  $FIELD_TYPE[$ty];
+}
 
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
@@ -1923,7 +2068,7 @@ HP200LX::DB - Perl module to access HP-200 LX database files
 
   interface functions:
     $db= HP200LX::DB::openDB ($fnm)     read database and return an DB object
-    $db= HP200LX::DB::new ($fnm)        create database and return an DB object
+    $db= new HP200LX::DB ($fnm)         create database and return an DB object
     $db->saveDB ($fnm)                  save DB object as a (new) file
 
   array tie implementation to access database data records:
@@ -1938,10 +2083,6 @@ HP200LX::DB - Perl module to access HP-200 LX database files
     $db->STORE_data_raw ($idx, $data)   store raw data record
     $db->STORE_note_raw ($idx, $note)   store raw note record
     $db->get_last_index ()              return highest index
-
-  additional UNIMPLEMENTED data manipulation methods:
-    T2D: $db->DELETE ($num)             delete given data record
-    T2D: $db->INSERT ($num)             insert a new object at index
 
   internal methods:
     $db->show_db_def (*FH)              show database definition
@@ -1968,14 +2109,14 @@ HP200LX::DB - Perl module to access HP-200 LX database files
     dump_def                            dump database definition
     dump_data_record                    print and dump data record
     hex_dump                            perform a hex dump of some data
-    decode_password                     attempt to decote the DB password
-    decode                              attempt to decode a DB recrod
+    decrypt_password                    attempt to decote the DB password
+    decrypt_data                        attempt to decode a DB recrod
 
 =head1 DESCRIPTION
 
-  DB.pm implements the perl package HP200LX::DB which is intended
-  to provide a perl 5 interface for files in the generic database
-  format of the HP 200 LX palmtop computer.  The perl modules are
+  DB.pm implements the Perl package HP200LX::DB which is intended
+  to provide a Perl 5 interface for files in the generic database
+  format of the HP 200LX palmtop computer.  The Perl modules are
   intended to be used on a work station such as a PC or a Unix
   machine to read and write data records from and to a database
   file.  These modules are not intended to be run directly on the
@@ -1986,17 +2127,17 @@ HP200LX::DB - Perl module to access HP-200 LX database files
 
 =head1 Copyright
 
-  Copyright (c) 1998 Gerhard Gonter.  All rights reserved.
+  Copyright (c) 1998-2001 Gerhard Gonter.  All rights reserved.
   This is free software; you can redistribute it and/or modify
   it under the same terms as Perl itself.
 
 =head1 AUTHOR
 
-  Gerhard Gonter, g.gonter@ieee.org or gonter@wu-wien.ac.at
+  Gerhard Gonter, g.gonter@ieee.org
 
 =head1 SEE ALSO
 
-  http://falbala.wu-wien.ac.at:8684/pub/english.cgi/0/24065
+  http://sourceforge.net/projects/hp200lx-db/,
   perl(1).
 
 =cut

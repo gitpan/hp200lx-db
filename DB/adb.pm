@@ -4,7 +4,8 @@
 # process ADB data
 #
 # written:       1999-05-23
-# latest update: 1999-05-23 22:26:58
+# latest update: 2001-01-01 18:11:11
+# $Id: adb.pm,v 1.2 2001/01/01 20:31:05 gonter Exp $
 #
 
 package HP200LX::DB::adb;
@@ -16,7 +17,7 @@ use HP200LX::DB qw(hex_dump);
 
 use HP200LX::DB::recurrence;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter HP200LX::DB);
 @EXPORT_OK= qw(openADB);
 

@@ -5,9 +5,10 @@ MANIFEST
 Makefile.PL
 DB.pm
 DB/adb.pm
-DB/vpt.pm
+DB/diag.pm
 DB/recurrence.pm
 DB/tools.pm
+DB/vpt.pm
 DBgui.pm
 DBgui/card.pm
 DBgui/list.pm
@@ -15,6 +16,7 @@ DBgui/vpt.pm
 test.pl
 test.gdb
 docs/announce-0.07.txt
+docs/announce-0.08.txt
 docs/adb-format.html
 docs/adb-dumps.html
 docs/ndb-format.html

@@ -4,7 +4,8 @@
 # list view component of the HP-200LX/DB GUI
 #
 # written:       1998-03-08
-# latest update: 1999-05-24 12:52:48
+# latest update: 2001-03-11  2:23:23
+# $Id: $
 #
 
 package HP200LX::DBgui::list;
@@ -13,7 +14,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;
@@ -122,8 +123,8 @@ sub new
   }
 
   $sbf->pack (-side => 'left', -fill => 'y');
-
   $sb->configure (-command => ['yview', $List_View]);
+
   foreach $lb (@lb)
   {
     $lb->bind ('<Double-1>' => sub { $List_View->select_item ($lb); } );

@@ -14,7 +14,8 @@
 # + DB object should be independent of HP200 specifics
 #
 # written:       1998-03-01
-# latest update: 1999-02-22 20:47:48
+# latest update: 2001-03-11  2:22:20
+# $Id: $
 #
 
 package HP200LX::DBgui;
@@ -23,7 +24,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT_OK);
 use Exporter;
 
-$VERSION = '0.05';
+$VERSION = '0.09';
 @ISA= qw(Exporter);
 @EXPORT_OK= qw(browse_db);
 

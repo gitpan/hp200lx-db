@@ -11,7 +11,7 @@ use strict;
 use vars qw($VERSION @ISA);
 use Exporter;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter HP200LX::DBgui);
 
 use Tk;

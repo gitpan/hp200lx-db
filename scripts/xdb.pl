@@ -7,6 +7,7 @@
 # latest update: 1999-02-22 20:40:41
 #
 
+use lib '.';
 use HP200LX::DB ('openDB');
 use HP200LX::DBgui ('browse_db');
 

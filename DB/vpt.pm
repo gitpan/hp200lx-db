@@ -53,7 +53,8 @@
 #   DONE: view points are re-calculated even if no data is there.
 #
 # written:       1998-06-01
-# latest update: 1999-05-24 12:52:25
+# latest update: 2001-03-03 20:54:08
+# $Id: vpt.pm,v 1.4 2001/03/05 02:04:20 gonter Exp $
 #
 
 package HP200LX::DB::vpt;
@@ -62,7 +63,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT);
 use Exporter;
 
-$VERSION = '0.07';
+$VERSION= '0.09';
 @ISA= qw(Exporter);
 @EXPORT= qw(get_viewptdef   find_viewptdef   get_viewptdef_count
             get_viewpttable find_viewpttable
@@ -81,10 +82,13 @@ sub get_viewptdef
   # print "\n", $delim, "\n", ">>>> viewptdef\n"; &HP200LX::DB::hex_dump ($def);
 
   my ($tok_lng, $str_lng, $flg)= unpack ('vvv', $def);
+  # a view point name may have up to 32 characters but the first NULL
+  # character indicates the end too.  The rest contains garabge!
+  # my $name= &HP200LX::DB::upto_EOS (substr ($def, 7, 32));
   my $name= substr ($def, 7, 32);
-  $name=~ s/\000.*//;
-  $def= substr ($def, 39);
+  $name=~ s/\0.*$//s;  # ignore new lines!
 
+  $def= substr ($def, 39);
   # print "name='$name'\n";
 
   # extract sorting information
@@ -123,7 +127,7 @@ sub get_viewptdef
   };
 
   # &show_viewptdef ($vptd, *STDOUT);
-  $vptd;
+  bless ($vptd);
 }
 
 # ----------------------------------------------------------------------------
@@ -153,7 +157,7 @@ sub find_viewptdef
   my ($v, $vptd);
   foreach $v (@$vptdl)
   {
-print "match: name=$v->{name} view=$view\n";
+    # print "match: name=$v->{name} view=$view\n";
     if ($v->{name} eq $view) { print "found! v=$v\n"; $vptd= $v; last; }
   }
   print "vptd=$vptd\n";
@@ -166,6 +170,12 @@ sub show_viewptdef
   my $vptd= shift;
   local *FX= shift;
   my ($i, $ci);
+
+  unless (defined ($vptd))
+  {
+    print FX "viewpoint not defined!\n";
+    return;
+  }
 
   print FX $delim, "\nViewpoint '", $vptd->{name},
            "' flags=", $vptd->{flags},
@@ -217,12 +227,14 @@ sub get_viewpttable
 sub pack_viewpt_table
 {
   my $tbl= shift;
-  my ($def, $t);
+  my $t;
+  my $def= '';  # must be initialized!
   foreach $t (@$tbl)
   {
     $def .= pack ('v', $t);
   }
-  $def .= pack ('v', $no_val);  # last entry
+  # $def= pack ('v', $no_val) unless ($def);  # dummy entry if empty
+  # NOTE: adding $no_val results in too many entries
   $def;
 }
 
@@ -234,9 +246,9 @@ sub find_viewpttable
 
   my $vpttl= $db->{viewpttable};        # view point table list
 
-print "find_viewpttable 1 view=$view\n";
+# print "find_viewpttable 1 view=$view\n";
   return undef unless ($view >= 0 && $view <= $#$vpttl);
-print "find_viewpttable 2 view=$view\n";
+# print "find_viewpttable 2 view=$view\n";
   my $vptt= $vpttl->[$view];
 
   $vptt= $db->refresh_viewpt ($view) if ($#$vptt < 0);
@@ -249,6 +261,7 @@ sub refresh_viewpt
 {
   my $db= shift;
   my $view= shift;                      # number of the view
+  $view= -1 unless (defined ($view));
 
   my $vpttl= $db->{viewpttable};        # view point table list
   my $vptdl= $db->{viewptdef};          # view point definition list
@@ -260,12 +273,14 @@ sub refresh_viewpt
     $view_start= 0;
     $view_end= $#$vptdl;
   }
+# print "refresh: view=$view start=$view_start end=$view_end\n";
 
   for ($view= $view_start; $view <= $view_end; $view++)
   {
     $vptd= $vptdl->[$view];
+    # &show_viewptdef ($vptd, *STDOUT);
     $vptt= $vpttl->[$view]= &refresh_viewpt_table ($db, $vptd);
-    print "refreshed vptt[$view]: ", $#$vptt-1, " entries\n";
+    print "refreshed vptt[$view]: ", $#$vptt+1, " entries\n";
     $T10->[$view]->{data}= &pack_viewpt_table ($vptt);
   }
 
@@ -273,6 +288,13 @@ sub refresh_viewpt
 }
 
 # ----------------------------------------------------------------------------
+# This method refreshes one particular view point table.
+# A view point depends on a filter definition (called SSL in HP-LX lingo)
+# which selects those entries that are used in a view point.
+# Those entries that match are then sorted using up to three (HP-LX limitation)
+# sort fields; I call this the chain of search fields.  This chain may
+# have no entries at all, in this case, the records are presented
+# in the order they appear in the GDB field itself.
 sub refresh_viewpt_table
 {
   my $db= shift;
@@ -284,10 +306,13 @@ sub refresh_viewpt_table
   my $fd= $db->{fielddef};
   my $sort= {}; # sort definition tree
   my @SORT;     # names of fields used for the sort
-  my $T= {};    # sorted records by sort fields
 
-  my ($i, $j, $x, $y, $z, $op, $match, $SSL, @ST);
+  my ($i, $j, $x, $y, $z, $op, $match);
+  # print ">>>> vptd keys: ", join (', ', keys %$vptd), "\n";
+
+  # prepare chain of sort fields
   my $rec= $sort= $vptd->{'sort'};
+  # print ">>>> vptd sorting: sort='$sort' ", join (',', @$sort);
   for ($i= 0; $i < $MAX_SORT_FIELDS; $i++)
   {
     $y= $rec->[$i];
@@ -308,12 +333,17 @@ sub refresh_viewpt_table
 
     $z= $z*2+ (($y->{asc}) ? 0 : 1);
     $y->{smode}= $z;
-    print "sort mode: x=$x name=$x->{name} ft=$ft z=$z\n";
+    # print "sort mode: x=$x name=$x->{name} ft=$ft z=$z\n";
   }
 
-  my $cnt= $db->get_last_index ();    # total number of records
+  my $T= ($#SORT == -1) ? [] : {};    # sorted records by sort fields
+  # SPECIAL CASE: no sort fields means that fields are sorted by
+  # the order they occur in the GDB file!
+  # We use an array reference for this case, otherwise the
+  # array reference is at the end of the chain of sort-field names.
 
-  print "refreshing view point; ssl_str=$ssls num(SSL)=$#SSL dbcnt=$cnt\n";
+  my $cnt= $db->get_last_index ();    # total number of records
+  # print "refreshing view point; ssl_str=$ssls num(SSL)=$#SSL dbcnt=$cnt\n";
   for ($i= 0; $i <= $cnt; $i++)
   {
     $rec= $db->FETCH ($i);
@@ -327,7 +357,8 @@ sub refresh_viewpt_table
     { # SSL was defined
       $match= 0;
       # this is the SSL match engine, it works like a mini FORTH interpreter
-      @ST= ();
+      my @ST= ();   # Forth Stack
+      my $SSL;
       foreach $SSL (@SSL)
       {
         $op= $SSL->{op};
@@ -370,9 +401,11 @@ sub refresh_viewpt_table
     if ($match)
     { # sorting: build up a sort tree
       # search the array reference holding the record indices
-      # the tree looks something like this
-      # $T->{$rec->{$SORT[0]}}->...->{$rec->{$SORT[n]}}= [ rec indices ]
-      $x= $T; $j= 0;
+      # the tree looks something like this:
+      #   $T->{$rec->{$SORT[0]}}->...->{$rec->{$SORT[n]}}= [ rec indices ]
+      # The sort tree may be 1, 2, or 3 levels deep.
+      $x= $T;
+      $j= 0;
       for ($j= 0; $j <= $#SORT; $j++)
       {
         $y= $rec->{$SORT[$j]};

@@ -1,10 +1,11 @@
 #!/usr/local/bin/perl
 # FILE .../CPAN/hp200lx-db/T2D
 #
-# $VERSION= '0.06';
+# $VERSION= '0.09';
 #
 # written:       1998-10-29
-# latest update: 1999-02-22 20:44:27
+# latest update: 2001-03-11  2:19:53
+# $Id: $
 #
 
 To-Do List:
@@ -13,12 +14,18 @@ To-Do List:
 2. define text based dump format which could be used to check databases
    into a revision control system such as RCS or CVS.
    This can be used as a form of backup...
+3. Code reorganisation:
+   DBgui should be in it's own module
 
 Things left to be done for later:
 
-  $db2= $db1->dupDB ()                  copy the database
-  $db->clearDB ()                       delete data and note elements
-  $db->delete ($num)                    delete a data record including note
+
+  additional UNIMPLEMENTED data manipulation methods:
+    $db->DELETE ($num)                  delete given data record
+    $db->INSERT ($num)                  insert a new object at index
+    $db2= $db1->dupDB ()                copy the database
+    $db->clearDB ()                     delete data and note elements
+    $db->delete ($num)                  delete a data record including note
 
 retrieve DB format
 $fmt->{$Fieldname}=
